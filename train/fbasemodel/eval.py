@@ -2,37 +2,36 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
-from utils.data import CaptionDataset
-from nltk.translate.bleu_score import corpus_bleu
+
 import torch.nn.functional as F
 from tqdm import tqdm
-from model import Encoder, MIML, Decoder
+from model import
+from utils.data import fCaptionDataset as CaptionDataset
 import os
 from pycocoevalcap.bleu.bleu import Bleu
 from pycocoevalcap.cider.cider import Cider
 from pycocoevalcap.meteor.meteor import Meteor
 from pycocoevalcap.rouge.rouge import Rouge
 from pycocoevalcap.spice.spice import Spice
-import json
 # Parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
+data_folder = '/home/lkk/dataset'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/caption_v1/checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
+checkpoint = './BEST_checkpoint_f_coco_5_cap_per_img_5_min_word_freq.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
-word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
+word_map_file = '../../datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+emb_dim = 1024  # dimension of word embeddings
+attention_dim = 1024
+decoder_dim = 1024  # dimension of decoder RNN
 
-emb_dim = 512  # dimension of word embeddings
-attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
-attrs_size = 1024
 dropout = 0.5
-attention_dim = 512
+
 # Load word map (word2ix)
 with open(word_map_file, 'r') as j:
     word_map = json.load(j)
@@ -41,30 +40,18 @@ vocab_size = len(word_map)
 
 # Load model
 checkpoint = torch.load(checkpoint, map_location=device)
-miml = MIML().to(device)
-miml.load_state_dict(checkpoint['miml'])
 
-miml.eval()
-
-encoder = Encoder().to(device)
-encoder.load_state_dict(checkpoint['encoder'])
-
-encoder.eval()
-decoder = Decoder(attrs_dim=attrs_dim, attention_dim=attention_dim,
-                  embed_dim=emb_dim,
-                  decoder_dim=decoder_dim,
-                  attrs_size=attrs_size,
-                  vocab_size=len(word_map),
-                  device=device,
-                  dropout=dropout).to(device)
+decoder = DecoderWithAttention(attention_dim=attention_dim,
+                               embed_dim=emb_dim,
+                               decoder_dim=decoder_dim,
+                               vocab_size=len(word_map),
+                               device=device, 
+                               dropout=dropout).to(device)
 decoder.load_state_dict(checkpoint['decoder'])
 decoder.eval()
 
 
 # Normalization transform
-normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-
 
 def evaluate(beam_size):
     """
@@ -75,8 +62,7 @@ def evaluate(beam_size):
     """
     # DataLoader
     loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'TEST',
-                       transform=transforms.Compose([normalize])),
+        CaptionDataset(data_folder, data_name, 'TEST'),
         batch_size=1, shuffle=True, num_workers=0, pin_memory=False)
 
     # TODO: Batched Beam Search
@@ -89,22 +75,13 @@ def evaluate(beam_size):
     hypotheses = dict()
 
     # For each image
-    for j, (image, caps, caplens, allcaps) in enumerate(
+    for j, (image_features, caps, caplens, allcaps) in enumerate(
             tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
 
         k = beam_size
 
         # Move to GPU device, if available
-        image = image.to(device)  # (1, 3, 256, 256)
-
-        attrs = miml(image).expand(3, attrs_dim)
-        encoder_out = encoder(image)
-        enc_image_size = encoder_out.size(1)
-        encoder_dim = encoder_out.size(3)
-        encoder_out = encoder_out.view(1, -1, encoder_dim)
-        num_pixels = encoder_out.size(1)
-        encoder_out = encoder_out.expand(k, num_pixels, encoder_dim)
-        x0 = decoder.init_x0(attrs)
+        image_features = image_features.to(device)
 
         # Tensor to store top k previous words at each step; now they're just <start>
         k_prev_words = torch.LongTensor(
@@ -122,25 +99,20 @@ def evaluate(beam_size):
 
         # Start decoding
         step = 1
-        h1, c1, h2, c2 = decoder.init_hidden_state(attrs, encoder_out)
-        h1, c1 = decoder.decode_step1(x0, (h1, c1))
+        h, c = decoder.init_hidden_state(k)
+
         # s is a number less than or equal to k, because sequences are removed from this process once they hit <end>
         while True:
 
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
-
-            awe, _ = decoder.attention(encoder_out, h2)
-            gate = decoder.sigmoid(decoder.f_beta(h2))
+            awe, _ = decoder.attention(image_features, h)
+            gate = decoder.sigmoid(decoder.f_beta(h))
             awe = gate * awe
+            h, c = decoder.decode_step(
+                torch.cat([embeddings, awe], dim=1), (h, c))
 
-            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
-            h2, c2 = decoder.decode_step2(
-                torch.cat([embeddings, awe], dim=1), (h2, c2))
-
-            pre1 = F.normalize(decoder.fc1(h1), p=2, dim=1)
-            pre2 = F.normalize(decoder.fc2(h2), p=2, dim=1)
-            scores = decoder.pre(pre1+pre2)
+            scores = decoder.fc(decoder.dropout(h))  # (s, vocab_size)
             scores = F.log_softmax(scores, dim=1)
 
             # Add
@@ -181,11 +153,8 @@ def evaluate(beam_size):
             if k == 0:
                 break
             seqs = seqs[incomplete_inds]
-            h1 = h1[prev_word_inds[incomplete_inds]]
-            c1 = c1[prev_word_inds[incomplete_inds]]
-            h2 = h2[prev_word_inds[incomplete_inds]]
-            c2 = c2[prev_word_inds[incomplete_inds]]
-            encoder_out = encoder_out[prev_word_inds[incomplete_inds]]
+            h = h[prev_word_inds[incomplete_inds]]
+            c = c[prev_word_inds[incomplete_inds]]
 
             top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
             k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
@@ -198,7 +167,6 @@ def evaluate(beam_size):
         i = complete_seqs_scores.index(max(complete_seqs_scores))
         seq = complete_seqs[i]
 
-        # References
         img_caps = allcaps[0].tolist()
         img_captions = list(
             map(lambda c: [rev_word_map[w] for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
@@ -215,8 +183,8 @@ def evaluate(beam_size):
         hypotheses[str(j)] = hypothesis
 
         assert len(references) == len(hypotheses)
-
-    # Calculate BLEU-1~BLEU4 scores
+        # if j == 100:
+        #     break
     m1 = Bleu()
     m2 = Meteor()
     m3 = Cider()
@@ -233,7 +201,6 @@ def evaluate(beam_size):
 
 if __name__ == '__main__':
     beam_size = 3
-
     score1, score2, score3, score4, score5 = evaluate(beam_size)
     print("\nMetric score's @ beam size of {} is:\n \
           Bleu : {} \n \

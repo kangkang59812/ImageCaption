@@ -5,11 +5,12 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basemodel
+from src.base_with_miml.model import Encoder, MIML, Decoder
 from utils.data import CaptionDataset
-from basemodel.model import Encoder, DecoderWithAttention
+from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml
 from nltk.translate.bleu_score import corpus_bleu
 import os
+from collections import OrderedDict
 from tensorboardX import SummaryWriter
 import json
 # Data parameters
@@ -19,8 +20,10 @@ data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data fil
 
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
-attention_dim = 512  # dimension of attention linear layers
+attention_dim = 512
+attrs_dim = 1024  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
+attrs_size = 1024
 dropout = 0.5
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
@@ -33,8 +36,8 @@ start_epoch = 0
 epochs = 30
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
-batch_size = 16
-workers = 1  # for data-loading; right now, only 1 works with h5py
+batch_size = 8
+workers = 0  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
 grad_clip = 5.  # clip gradients at an absolute value of
@@ -42,49 +45,63 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 score right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-# checkpoint = './checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # path to checkpoint, None if none
-checkpoint = None
+
+checkpoint = None  # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
+checkpoint_miml = '/home/lkk/code/caption_v1/checkpoint/MIML.pth.tar'
 
 
 def main():
-    """
-    Training and validation.
-    """
-
     global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map
     word_map_file = os.path.join(data_folder, 'WORDMAP_' + data_name + '.json')
     with open(word_map_file, 'r') as j:
         word_map = json.load(j)
 
-    decoder = DecoderWithAttention(attention_dim=attention_dim,
-                                   embed_dim=emb_dim,
-                                   decoder_dim=decoder_dim,
-                                   vocab_size=len(word_map),
-                                   device=device,
-                                   dropout=dropout)
-    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-                                         lr=decoder_lr)
+    miml = MIML()
+    pretrained_net_dict = torch.load(
+        checkpoint_miml, map_location=lambda storage, loc: storage)['model']
+    new_state_dict = OrderedDict()
+    for k, v in pretrained_net_dict.items():
+        name = k[7:]  # remove `module.`
+        new_state_dict[name] = v
+        # load params
+    miml.load_state_dict(new_state_dict)
+    del pretrained_net_dict  # dereference seems crucial
+    del new_state_dict
+    torch.cuda.empty_cache()
+
     encoder = Encoder()
     encoder.fine_tune(fine_tune_encoder)
     encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
                                          lr=encoder_lr) if fine_tune_encoder else None
 
+    decoder = Decoder(attrs_dim=attrs_dim, attention_dim=attention_dim,
+                      embed_dim=emb_dim,
+                      decoder_dim=decoder_dim,
+                      attrs_size=attrs_size,
+                      vocab_size=len(word_map),
+                      device=device,
+                      dropout=dropout)
+    decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+                                         lr=decoder_lr)
+
     if checkpoint:
         checkpoint = torch.load(
             checkpoint, map_location=lambda storage, loc: storage)
-        start_epoch = checkpoint['epoch'] + 1
-        epochs_since_improvement = checkpoint['epochs_since_improvement']
         best_bleu4 = checkpoint['bleu-4']
-        decoder.load_state_dict(checkpoint['decoder'])
-        decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
+        start_epoch = checkpoint['epoch']+1
+        epochs_since_improvement = checkpoint['epochs_since_improvement']
+        miml.load_state_dict(checkpoint['miml'])
         encoder.load_state_dict(checkpoint['encoder'])
-        if fine_tune_encoder:
-            encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer'])
+        decoder.load_state_dict(checkpoint['decoder'])
+        encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer'])
+        decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
 
+        del checkpoint  # dereference seems crucial
+        torch.cuda.empty_cache()
+
+    miml = miml.to(device)
     decoder = decoder.to(device)
     encoder = encoder.to(device)
-
-    # Loss function
     criterion = nn.CrossEntropyLoss().to(device)
 
     # Custom dataloaders
@@ -98,19 +115,24 @@ def main():
         CaptionDataset(data_folder, data_name, 'VAL',
                        transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=False)
-    writer = SummaryWriter(log_dir='./log_basemodel')
+    writer = SummaryWriter(log_dir='./log_basewithmiml')
     for epoch in range(start_epoch, epochs):
 
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
         if epochs_since_improvement == 20:
             break
-        if epochs_since_improvement > 0 and epochs_since_improvement % 8 == 0:
+        if epochs_since_improvement > 0 and epochs_since_improvement % 6 == 0:
+            adjust_learning_rate(decoder_optimizer, 0.8)
+            if fine_tune_encoder:
+                adjust_learning_rate(encoder_optimizer, 0.8)
+        elif epoch == 15:
             adjust_learning_rate(decoder_optimizer, 0.8)
             if fine_tune_encoder:
                 adjust_learning_rate(encoder_optimizer, 0.8)
 
         # One epoch's training
         train(train_loader=train_loader,
+              miml=miml,
               encoder=encoder,
               decoder=decoder,
               criterion=criterion,
@@ -121,6 +143,7 @@ def main():
 
         # One epoch's validation
         recent_bleu4 = validate(val_loader=val_loader,
+                                miml=miml,
                                 encoder=encoder,
                                 decoder=decoder,
                                 criterion=criterion,
@@ -138,11 +161,11 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_basemodel(epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,
-                                  decoder_optimizer, recent_bleu4, is_best)
+        save_checkpoint_basewithmiml(epoch, epochs_since_improvement, miml, encoder, decoder,
+                                     encoder_optimizer, decoder_optimizer, recent_bleu4, is_best)
 
 
-def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch, writer):
+def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch, writer):
     """
     Performs one epoch's training.
 
@@ -154,9 +177,9 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
     :param decoder_optimizer: optimizer to update decoder's weights
     :param epoch: epoch number
     """
-
-    decoder.train()  # train mode (dropout and batchnorm is used)
     encoder.train()
+    decoder.train()  # train mode (dropout and batchnorm is used)
+    miml.train()
     total_step = len(train_loader)
     batch_time = AverageMeter()  # forward prop. + back prop. time
     data_time = AverageMeter()  # data loading time
@@ -175,9 +198,10 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
         caplens = caplens.to(device)
 
         # Forward prop.
-        imgs = encoder(imgs)
+        # attrs = miml(imgs)
+        # imgs = encoder(imgs)
         scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
-            imgs, caps, caplens)
+            miml(imgs), encoder(imgs), caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
         targets = caps_sorted[:, 1:]
@@ -192,14 +216,12 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
 
         # Calculate loss
         loss = criterion(scores, targets)
-
-        # Add doubly stochastic attention regularization
         loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
-
         # Back prop.
         decoder_optimizer.zero_grad()
         if encoder_optimizer is not None:
             encoder_optimizer.zero_grad()
+
         loss.backward()
 
         # Clip gradients
@@ -207,12 +229,10 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
             clip_gradient(decoder_optimizer, grad_clip)
             if encoder_optimizer is not None:
                 clip_gradient(encoder_optimizer, grad_clip)
-
         # Update weights
         decoder_optimizer.step()
         if encoder_optimizer is not None:
             encoder_optimizer.step()
-
         # Keep track of metrics
         top5 = accuracy(scores, targets, 5)
         losses.update(loss.item(), sum(decode_lengths))
@@ -235,7 +255,7 @@ def train(train_loader, encoder, decoder, criterion, encoder_optimizer, decoder_
                                                                           top5=top5accs))
 
 
-def validate(val_loader, encoder, decoder, criterion, epoch, writer):
+def validate(val_loader, miml, encoder, decoder, criterion, epoch, writer):
     """
     Performs one epoch's validation.
 
@@ -245,9 +265,9 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
     :param criterion: loss layer
     :return: BLEU-4 score
     """
+    miml.eval()
+    encoder.eval()
     decoder.eval()  # eval mode (no dropout or batchnorm)
-    if encoder is not None:
-        encoder.eval()
     total_step = len(val_loader)
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -269,10 +289,11 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
             caplens = caplens.to(device)
 
             # Forward prop.
-            if encoder is not None:
-                imgs = encoder(imgs)
+
+            attrs = miml(imgs)
+            imgs = encoder(imgs)
             scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
-                imgs, caps, caplens)
+                attrs, imgs, caps, caplens)
 
             # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
             targets = caps_sorted[:, 1:]
@@ -287,10 +308,7 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
 
             # Calculate loss
             loss = criterion(scores, targets)
-
-            # Add doubly stochastic attention regularization
             loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
-
             # Keep track of metrics
             losses.update(loss.item(), sum(decode_lengths))
             top5 = accuracy(scores, targets, 5)
@@ -344,7 +362,6 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
         weights = (1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0,)
         bleu3 = corpus_bleu(references, hypotheses, weights)
         bleu4 = corpus_bleu(references, hypotheses)
-
         writer.add_scalars(
             'Bleu', {'Bleu1': bleu1, 'Bleu2': bleu2, 'Bleu3': bleu3, 'Bleu4': bleu4}, epoch)
         print(
@@ -356,5 +373,5 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
     return bleu4
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
