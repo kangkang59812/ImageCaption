@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basemodel
 from utils.data import CaptionDataset
-from model import Encoder, DecoderWithAttention
+from src.basemodel.model import Encoder, DecoderWithAttention
 from nltk.translate.bleu_score import corpus_bleu
 import os
 from tensorboardX import SummaryWriter

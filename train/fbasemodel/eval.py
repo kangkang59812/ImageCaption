@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 
 import torch.nn.functional as F
 from tqdm import tqdm
-from model import
+from src.fbasemodel.model import DecoderWithAttention
 from utils.data import fCaptionDataset as CaptionDataset
 import os
 from pycocoevalcap.bleu.bleu import Bleu

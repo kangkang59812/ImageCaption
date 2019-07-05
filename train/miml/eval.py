@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 from utils.data import CaptionDataset
 import torch.nn.functional as F
 from tqdm import tqdm
-from model import MIML, Decoder
+from src.miml.model import MIML, Decoder
 import os
 import json
 from pycocoevalcap.bleu.bleu import Bleu

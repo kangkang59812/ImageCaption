@@ -7,7 +7,7 @@ from utils.data import CaptionDataset
 from nltk.translate.bleu_score import corpus_bleu
 import torch.nn.functional as F
 from tqdm import tqdm
-
+from src.basemodel.model import Encoder, DecoderWithAttention
 # Parameters
 data_folder = '/home/lkk/datasets/coco2014/'  # folder with data files saved by create_input_files.py
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files

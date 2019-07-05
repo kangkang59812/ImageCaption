@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from model import DecoderWithAttention
+from src.fbasemodel.model import DecoderWithAttention
 from utils.data import fCaptionDataset as CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
 from nltk.translate.bleu_score import corpus_bleu
