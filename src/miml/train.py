@@ -6,7 +6,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from model import MIML, Decoder
+from miml.model import MIML, Decoder
 from utils.data import CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
 from nltk.translate.bleu_score import corpus_bleu
@@ -79,8 +79,6 @@ def main():
 
     decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
                                          lr=decoder_lr)
-    miml = miml.to(device)
-    decoder = decoder.to(device)
 
     if checkpoint:
         checkpoint = torch.load(
@@ -91,6 +89,9 @@ def main():
         miml.load_state_dict(checkpoint['miml'])
         decoder.load_state_dict(checkpoint['decoder'])
         decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
+
+    miml = miml.to(device)
+    decoder = decoder.to(device)
     # Loss function
     criterion = nn.CrossEntropyLoss().to(device)
 
@@ -143,7 +144,7 @@ def main():
 
         # Save checkpoint
         save_checkpoint_miml(data_name, epoch, epochs_since_improvement, miml, decoder,
-                        decoder_optimizer, recent_bleu4, is_best)
+                             decoder_optimizer, recent_bleu4, is_best)
 
 
 def train(train_loader, miml, decoder, criterion, decoder_optimizer, epoch, writer):
