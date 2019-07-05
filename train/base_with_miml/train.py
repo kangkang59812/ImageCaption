@@ -37,7 +37,7 @@ epochs = 30
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
 batch_size = 8
-workers = 0  # for data-loading; right now, only 1 works with h5py
+workers = 1  # for data-loading; right now, only 1 works with h5py
 encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 4e-4  # learning rate for decoder
 grad_clip = 5.  # clip gradients at an absolute value of
@@ -47,7 +47,7 @@ print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
 
 checkpoint = None  # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
-checkpoint_miml = '/home/lkk/code/caption_v1/checkpoint/MIML.pth.tar'
+checkpoint_miml = '/home/lkk/code/ImageCaption/MIML.pth.tar'
 
 
 def main():
