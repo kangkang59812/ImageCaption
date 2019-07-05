@@ -9,7 +9,7 @@ import os.path as osp
 import torch
 
 
-def save_fcheckpoint(epoch, epochs_since_improvement, decoder, decoder_optimizer,
+def save_checkpoint_fbasemodel(epoch, epochs_since_improvement, decoder, decoder_optimizer,
                      bleu4, is_best):
 
     state = {'epoch': epoch,
