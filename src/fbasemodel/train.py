@@ -5,12 +5,13 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
+from fbasemodel.model import DecoderWithAttention
 from utils.data import CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
 from nltk.translate.bleu_score import corpus_bleu
 import os
 from tensorboardX import SummaryWriter
-from fbasemodel.model import DecoderWithAttention
+
 # Data parameters
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/dataset'
