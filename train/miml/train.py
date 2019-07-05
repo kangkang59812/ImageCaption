@@ -48,7 +48,7 @@ print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = False  # fine-tune encoder?
 # checkpoint = './checkpoint_coco_5_cap_per_img_5_min_word_freq.pth.tar'  # path to checkpoint, None if none
 checkpoint = None
-checkpoint_miml = '/home/lkk/code/caption_v1/checkpoint/MIML.pth.tar'
+checkpoint_miml = '/home/lkk/code/ImageCaption/MIML.pth.tar'
 
 
 def main():
