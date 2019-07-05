@@ -1,0 +1,16 @@
+.ipynb_checkpoints
+.vscode
+*.pyc
+*.tar
+*.out
+__pycache__
+*.out
+*.ipynb
+*.json
+*.jpg
+log*
+*.jar
+*.gz
+*.mdb
+tmp*
+.DS_Store
