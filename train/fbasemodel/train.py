@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from src.fbasemodel.model import DecoderWithAttention
 from utils.data import fCaptionDataset as CaptionDataset
-from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
+from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_fbasemodel
 from nltk.translate.bleu_score import corpus_bleu
 import os
 from tensorboardX import SummaryWriter
@@ -119,7 +119,7 @@ def main():
         else:
             epochs_since_improvement = 0
         # Save checkpoint
-        save_fcheckpoint(epoch, epochs_since_improvement, decoder,
+        save_checkpoint_fbasemodel(epoch, epochs_since_improvement, decoder,
                          decoder_optimizer, recent_bleu4, is_best)
 
 

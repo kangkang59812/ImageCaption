@@ -13,14 +13,15 @@ from pycocoevalcap.cider.cider import Cider
 from pycocoevalcap.meteor.meteor import Meteor
 from pycocoevalcap.rouge.rouge import Rouge
 from pycocoevalcap.spice.spice import Spice
+import json
 # Parameters
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/dataset'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = './BEST_checkpoint_f_coco_5_cap_per_img_5_min_word_freq.pth.tar'
+checkpoint = '/home/lkk/code/caption_v1/BEST_checkpoint_f_coco_5_cap_per_img_5_min_word_freq.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
-word_map_file = '../../datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
+word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
