@@ -221,7 +221,6 @@ class DecoderWithAttention(nn.Module):
             1).sort(dim=0, descending=True)
         encoder_out = encoder_out[sort_ind]
 
-        #global_encoder = encoder_out.sum(dim=2)
         # [32, 52]
         encoded_captions = encoded_captions[sort_ind]
 

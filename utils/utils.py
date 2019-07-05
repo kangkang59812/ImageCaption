@@ -9,6 +9,21 @@ import os.path as osp
 import torch
 
 
+def save_checkpoint_miml(epoch, epochs_since_improvement, miml, decoder, decoder_optimizer,
+                         bleu4, is_best):
+    state = {'epoch': epoch,
+             'epochs_since_improvement': epochs_since_improvement,
+             'bleu-4': bleu4,
+             'miml': miml.state_dict(),
+             'decoder': decoder.state_dict(),
+             'decoder_optimizer': decoder_optimizer.state_dict()}
+    filename = 'checkpoint_miml_epoch_' + str(epoch) + '.pth.tar'
+    torch.save(state, filename)
+    # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
+    if is_best:
+        torch.save(state, 'BEST_' + filename)
+
+
 def save_checkpoint_basemodel(epoch, epochs_since_improvement, encoder, decoder, encoder_optimizer,  decoder_optimizer,
                               bleu4, is_best):
     state = {'epoch': epoch,
