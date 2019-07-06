@@ -74,6 +74,9 @@ class DecoderWithAttention(nn.Module):
         self.dropout = nn.Dropout(p=self.dropout)
         self.decode_step = nn.LSTMCell(
             embed_dim + features_dim, decoder_dim, bias=True)  # decoding LSTMCell
+        self.init_h = nn.Linear(features_dim, decoder_dim)
+        # linear layer to find initial cell state of LSTMCell
+        self.init_c = nn.Linear(features_dim, decoder_dim)
         # linear layer to find initial hidden state of LSTMCell
         # linear layer to create a sigmoid-activated gate
         self.f_beta = nn.Linear(decoder_dim, features_dim)
@@ -107,15 +110,18 @@ class DecoderWithAttention(nn.Module):
         for p in self.embedding.parameters():
             p.requires_grad = fine_tune
 
-    def init_hidden_state(self, batch_size):
+    def init_hidden_state(self, image_features):
         """
         Creates the initial hidden and cell states for the decoder's LSTM based on the encoded images.
         :param encoder_out: encoded images, a tensor of dimension (batch_size, num_pixels, encoder_dim)
         :return: hidden state, cell state
         """
-        h = torch.zeros(batch_size, self.decoder_dim).to(
-            self.device)  # (batch_size, decoder_dim)
-        c = torch.zeros(batch_size, self.decoder_dim).to(self.device)
+        mean_features = image_features.mean(dim=1)
+        h = self.init_h(mean_features)
+        c = self.init_c(mean_features)
+        # h = torch.zeros(batch_size, self.decoder_dim).to(
+        #     self.device)  # (batch_size, decoder_dim)
+        # c = torch.zeros(batch_size, self.decoder_dim).to(self.device)
         return h, c
 
     def forward(self, image_features, encoded_captions, caption_lengths):
@@ -146,7 +152,7 @@ class DecoderWithAttention(nn.Module):
         embeddings = self.embedding(encoded_captions)
 
         # Initialize LSTM state
-        h, c = self.init_hidden_state(batch_size)  # (batch_size, decoder_dim)
+        h, c = self.init_hidden_state(image_features)  # (batch_size, decoder_dim)
 
         # We won't decode at the <end> position, since we've finished generating as soon as we generate <end>
         # So, decoding lengths are actual lengths - 1
