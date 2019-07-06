@@ -10,14 +10,14 @@ import torch
 
 
 def save_checkpoint_fbasemodel(epoch, epochs_since_improvement, decoder, decoder_optimizer,
-                     bleu4, is_best):
+                               bleu4, is_best):
 
     state = {'epoch': epoch,
              'epochs_since_improvement': epochs_since_improvement,
              'bleu-4': bleu4,
              'decoder': decoder.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_fbasemodel_' + str(epoch) + '.pth.tar'
+    filename = 'checkpoint_fbasemodel_' + '.pth.tar'
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
@@ -34,7 +34,7 @@ def save_checkpoint_basewithmiml(epoch, epochs_since_improvement, miml, encoder,
              'decoder': decoder.state_dict(),
              'encoder_optimizer': encoder_optimizer.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_basewithmiml_' + str(epoch) + '.pth.tar'
+    filename = 'checkpoint_basewithmiml_' + '.pth.tar'
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
@@ -49,7 +49,7 @@ def save_checkpoint_miml(epoch, epochs_since_improvement, miml, decoder, decoder
              'miml': miml.state_dict(),
              'decoder': decoder.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_miml_epoch_' + str(epoch) + '.pth.tar'
+    filename = 'checkpoint_miml_epoch_' +  '.pth.tar'
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
@@ -65,7 +65,7 @@ def save_checkpoint_basemodel(epoch, epochs_since_improvement, encoder, decoder,
              'decoder': decoder.state_dict(),
              'encoder_optimizer': encoder_optimizer.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_basemodel_epoch_' + str(epoch) + '.pth.tar'
+    filename = 'checkpoint_basemodel_epoch_' + '.pth.tar'
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
