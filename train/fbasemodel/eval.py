@@ -2,7 +2,6 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
-
 import torch.nn.functional as F
 from tqdm import tqdm
 from src.fbasemodel.model import DecoderWithAttention
@@ -19,14 +18,13 @@ import json
 data_folder = '/home/lkk/dataset'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/caption_v1/BEST_checkpoint_f_coco_5_cap_per_img_5_min_word_freq.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/BEST_checkpoint_fbasemodel_.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
 word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 emb_dim = 1024  # dimension of word embeddings
 attention_dim = 1024
 decoder_dim = 1024  # dimension of decoder RNN
@@ -46,7 +44,7 @@ decoder = DecoderWithAttention(attention_dim=attention_dim,
                                embed_dim=emb_dim,
                                decoder_dim=decoder_dim,
                                vocab_size=len(word_map),
-                               device=device, 
+                               device=device,
                                dropout=dropout).to(device)
 decoder.load_state_dict(checkpoint['decoder'])
 decoder.eval()
@@ -83,7 +81,10 @@ def evaluate(beam_size):
 
         # Move to GPU device, if available
         image_features = image_features.to(device)
-
+        num_pixels = image_features.size(1)
+        image_features_dim = image_features.size(2)
+        image_features = image_features.expand(
+            k, num_pixels, image_features_dim)
         # Tensor to store top k previous words at each step; now they're just <start>
         k_prev_words = torch.LongTensor(
             [[word_map['<start>']]] * k).to(device)  # (k, 1)
@@ -100,7 +101,7 @@ def evaluate(beam_size):
 
         # Start decoding
         step = 1
-        h, c = decoder.init_hidden_state(k)
+        h, c = decoder.init_hidden_state(image_features)
 
         # s is a number less than or equal to k, because sequences are removed from this process once they hit <end>
         while True:
@@ -156,7 +157,7 @@ def evaluate(beam_size):
             seqs = seqs[incomplete_inds]
             h = h[prev_word_inds[incomplete_inds]]
             c = c[prev_word_inds[incomplete_inds]]
-
+            image_features = image_features[prev_word_inds[incomplete_inds]]
             top_k_scores = top_k_scores[incomplete_inds].unsqueeze(1)
             k_prev_words = next_word_inds[incomplete_inds].unsqueeze(1)
 
