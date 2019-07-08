@@ -191,7 +191,7 @@ class Attention(nn.Module):
         # linear layer to calculate values to be softmax-ed
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
-        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
     def forward(self, encoder_out, decoder_hidden1, decoder_hidden2):
@@ -209,7 +209,7 @@ class Attention(nn.Module):
         att3 = self.attr_att(decoder_hidden1)
         # (batch_size, num_pixels)
         att = self.full_att(self.dropout(
-            self.relu(att1 + att2.unsqueeze(1)+att3.unsqueeze(1)))).squeeze(2)
+            self.tanh(att1 + att2.unsqueeze(1)+att3.unsqueeze(1)))).squeeze(2)
         alpha = self.softmax(att)  # (batch_size, num_pixels)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
