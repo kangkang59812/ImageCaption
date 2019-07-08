@@ -339,6 +339,9 @@ class Decoder(nn.Module):
 
         caption_lengths, sort_ind = caption_lengths.squeeze(
             1).sort(dim=0, descending=True)
+        
+        # 重新按照句子长度排序
+        encoder_out = encoder_out[sort_ind]
         attrs = attrs[sort_ind]
 
         encoded_captions = encoded_captions[sort_ind]

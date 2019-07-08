@@ -342,7 +342,7 @@ class Decoder(nn.Module):
         caption_lengths, sort_ind = caption_lengths.squeeze(
             1).sort(dim=0, descending=True)
         attrs = attrs[sort_ind]
-
+        encoder_out = encoder_out[sort_ind]
         encoded_captions = encoded_captions[sort_ind]
 
         embeddings = self.embedding(encoded_captions)
@@ -364,7 +364,7 @@ class Decoder(nn.Module):
             h1, c1 = self.decode_step1(
                 embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
             # 下
-            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t]
+            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
                                                                 h2[:batch_size_t])
             # gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
             # attention_weighted_encoding = gate * attention_weighted_encoding
