@@ -24,7 +24,7 @@ def save_checkpoint_fbasemodel(prefix, epoch, epochs_since_improvement, decoder,
         torch.save(state, 'BEST_' + filename)
 
 
-def save_checkpoint_basewithmiml(epoch, epochs_since_improvement, miml, encoder, decoder, encoder_optimizer, decoder_optimizer,
+def save_checkpoint_basewithmiml(prefix, epoch, epochs_since_improvement, miml, encoder, decoder, encoder_optimizer, decoder_optimizer,
                                  bleu4, is_best):
     state = {'epoch': epoch,
              'epochs_since_improvement': epochs_since_improvement,
@@ -34,24 +34,7 @@ def save_checkpoint_basewithmiml(epoch, epochs_since_improvement, miml, encoder,
              'decoder': decoder.state_dict(),
              'encoder_optimizer': encoder_optimizer.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_basewithmiml_' + '.pth.tar'
-    torch.save(state, filename)
-    # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
-    if is_best:
-        torch.save(state, 'BEST_' + filename)
-
-
-def save_checkpoint_basewithmiml2(epoch, epochs_since_improvement, miml, encoder, decoder, encoder_optimizer, decoder_optimizer,
-                                  bleu4, is_best):
-    state = {'epoch': epoch,
-             'epochs_since_improvement': epochs_since_improvement,
-             'bleu-4': bleu4,
-             'miml': miml.state_dict(),
-             'encoder': encoder.state_dict(),
-             'decoder': decoder.state_dict(),
-             'encoder_optimizer': encoder_optimizer.state_dict(),
-             'decoder_optimizer': decoder_optimizer.state_dict()}
-    filename = 'checkpoint_basewithmiml2_' + '.pth.tar'
+    filename = prefix + '_checkpoint_' + '.pth.tar'
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
