@@ -19,7 +19,7 @@ from tensorboardX import SummaryWriter
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-
+prefix = 'miml'
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
 attrs_dim = 1024  # dimension of attention linear layers
@@ -143,7 +143,7 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_miml(data_name, epoch, epochs_since_improvement, miml, decoder,
+        save_checkpoint_miml(prefix, data_name, epoch, epochs_since_improvement, miml, decoder,
                              decoder_optimizer, recent_bleu4, is_best)
 
 

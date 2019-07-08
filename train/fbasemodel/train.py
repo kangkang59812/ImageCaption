@@ -16,7 +16,7 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/dataset'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-
+prefix = 'fbasemodel'
 # Model parameters
 emb_dim = 1024  # dimension of word embeddings
 attention_dim = 1024  # dimension of attention linear layers
@@ -51,7 +51,8 @@ def main():
     """
 
     global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map
-    word_map_file = os.path.join('/home/lkk/datasets/coco2014/', 'WORDMAP_' + data_name + '.json')
+    word_map_file = os.path.join(
+        '/home/lkk/datasets/coco2014/', 'WORDMAP_' + data_name + '.json')
     with open(word_map_file, 'r') as j:
         word_map = json.load(j)
 
@@ -65,7 +66,8 @@ def main():
                                          lr=decoder_lr)
 
     if checkpoint:
-        checkpoint = torch.load(checkpoint, map_location=lambda storage, loc: storage)
+        checkpoint = torch.load(
+            checkpoint, map_location=lambda storage, loc: storage)
         start_epoch = checkpoint['epoch'] + 1
         epochs_since_improvement = checkpoint['epochs_since_improvement']
         best_bleu4 = checkpoint['bleu-4']
@@ -119,8 +121,8 @@ def main():
         else:
             epochs_since_improvement = 0
         # Save checkpoint
-        save_checkpoint_fbasemodel(epoch, epochs_since_improvement, decoder,
-                         decoder_optimizer, recent_bleu4, is_best)
+        save_checkpoint_fbasemodel(prefix, epoch, epochs_since_improvement, decoder,
+                                   decoder_optimizer, recent_bleu4, is_best)
 
 
 def train(train_loader, decoder, criterion, decoder_optimizer, epoch, writer):
