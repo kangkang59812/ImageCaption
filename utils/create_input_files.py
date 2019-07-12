@@ -9,9 +9,12 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import os.path as osp
+import pickle
+from collections import Counter
+from random import seed, choice, sample
 
 
-def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_image, min_word_freq, output_folder,
+def create_input_files(dataset, karpathy_json_path, image_folder, features_folder, captions_per_image, min_word_freq, output_folder,
                        max_len=50):
     """
     Creates input files for training, validation, and test data.
@@ -30,6 +33,12 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
     with open(karpathy_json_path, 'r') as j:
         data = json.load(j)
 
+    with open(os.path.join(features_folder, 'train36_imgid2idx.pkl'), 'rb') as j:
+        train_data = pickle.load(j)
+
+    with open(os.path.join(features_folder, 'val36_imgid2idx.pkl'), 'rb') as j:
+        val_data = pickle.load(j)
+
     # Read image paths and captions for each image
     train_image_paths = []
     train_image_captions = []
@@ -37,6 +46,11 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
     val_image_captions = []
     test_image_paths = []
     test_image_captions = []
+
+    train_image_det = []
+    val_image_det = []
+    test_image_det = []
+
     word_freq = Counter()
 
     for img in data['images']:
@@ -50,23 +64,39 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
         if len(captions) == 0:
             continue
 
-        path = os.path.join(image_folder, img['filepath'], img['filename']) if 'coco' in dataset else os.path.join(
+        path = os.path.join(image_folder, img['filepath'], img['filename']) if 'coco2014' in dataset else os.path.join(
             image_folder, img['filename'])
+        image_id = img['filename'].split('_')[2]
+        image_id = int(image_id.lstrip("0").split('.')[0])
 
         if img['split'] in {'train', 'restval'}:
             train_image_paths.append(path)
             train_image_captions.append(captions)
+            if img['filepath'] == 'train2014':
+                if image_id in train_data:
+                    train_image_det.append(("t", train_data[image_id]))
+            else:
+                if image_id in val_data:
+                    train_image_det.append(("v", val_data[image_id]))
         elif img['split'] in {'val'}:
             val_image_paths.append(path)
             val_image_captions.append(captions)
+            if image_id in val_data:
+                val_image_det.append(("v", val_data[image_id]))
+
         elif img['split'] in {'test'}:
             test_image_paths.append(path)
             test_image_captions.append(captions)
+            if image_id in val_data:
+                test_image_det.append(("v", val_data[image_id]))
 
     # Sanity check
     assert len(train_image_paths) == len(train_image_captions)
     assert len(val_image_paths) == len(val_image_captions)
     assert len(test_image_paths) == len(test_image_captions)
+    assert len(train_image_det) == len(train_image_captions)
+    assert len(val_image_det) == len(val_image_captions)
+    assert len(test_image_det) == len(test_image_captions)
 
     # Create word map
     words = [w for w in word_freq.keys() if word_freq[w] > min_word_freq]
@@ -87,9 +117,9 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
 
     # Sample captions for each image, save images to HDF5 file, and captions and their lengths to JSON files
     seed(123)
-    for impaths, imcaps, split in [(train_image_paths, train_image_captions, 'TRAIN'),
-                                   (val_image_paths, val_image_captions, 'VAL')]:
-                                   # ,(test_image_paths, test_image_captions, 'TEST')]:
+    for impaths, impaths2, imcaps, split in [(train_image_paths, train_image_det, train_image_captions, 'TRAIN'),
+                                   (val_image_paths, val_image_det, val_image_captions, 'VAL'),
+                                   (test_image_paths, test_image_det, test_image_captions, 'TEST')]:
 
         with h5py.File(os.path.join(output_folder, split + '_IMAGES_' + base_filename + '.hdf5'), 'a') as h:
             # Make a note of the number of captions we are sampling per image
@@ -152,14 +182,25 @@ def create_input_files(dataset, karpathy_json_path, image_folder, captions_per_i
             with open(os.path.join(output_folder, split + '_CAPLENS_' + base_filename + '.json'), 'w') as j:
                 json.dump(caplens, j)
 
+    # Save bottom up features indexing to JSON files
+    with open(os.path.join(output_folder, 'TRAIN' + '_GENOME_DETS_' + base_filename + '.json'), 'w') as j:
+        json.dump(train_image_det, j)
+
+    with open(os.path.join(output_folder, 'VAL' + '_GENOME_DETS_' + base_filename + '.json'), 'w') as j:
+        json.dump(val_image_det, j)
+
+    with open(os.path.join(output_folder, 'TEST' + '_GENOME_DETS_' + base_filename + '.json'), 'w') as j:
+        json.dump(test_image_det, j)
+
 
 if __name__ == '__main__':
     # Create input files (along with word map)
     # coco2014 and coco2017
     create_input_files(dataset='coco2014',
-                       karpathy_json_path='../../../datasets/coco2014/dataset_coco.json',
-                       image_folder='../../../datasets/coco2014/',
+                       karpathy_json_path='/home/lkk/datasets/coco2014/dataset_coco.json',
+                       image_folder='/home/lkk/datasets/coco2014/',
                        captions_per_image=5,
                        min_word_freq=5,
-                       output_folder='../../../datasets/coco2014/',
+                       output_folder='/home/lkk/datasets/coco/',
+                       features_folder='/home/lkk/dataset/',
                        max_len=50)
