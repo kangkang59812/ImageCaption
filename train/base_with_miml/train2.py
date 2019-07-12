@@ -33,7 +33,7 @@ cudnn.benchmark = True
 # Training parameters
 start_epoch = 0
 # number of epochs to train for (if early stopping is not triggered)
-epochs = 30
+epochs = 20
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
 batch_size = 16
@@ -72,7 +72,7 @@ def main():
     encoder = Encoder()
     encoder.fine_tune(fine_tune_encoder)
     encoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, encoder.parameters()),
-                                         lr=encoder_lr) if fine_tune_encoder else None
+                                         lr=encoder_lr, weight_decay=1e-3) if fine_tune_encoder else None
 
     decoder = Decoder(attrs_dim=attrs_dim, attention_dim=attention_dim,
                       embed_dim=emb_dim,
@@ -82,7 +82,7 @@ def main():
                       device=device,
                       dropout=dropout)
     decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-                                         lr=decoder_lr)
+                                         lr=decoder_lr, weight_decay=1e-3)
 
     if checkpoint:
         checkpoint = torch.load(
@@ -119,13 +119,13 @@ def main():
     for epoch in range(start_epoch, epochs):
 
         # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        if epochs_since_improvement == 15:
+        if epochs_since_improvement == 10:
             break
-        if epochs_since_improvement > 0 and epochs_since_improvement % 5 == 0:
+        if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
             adjust_learning_rate(decoder_optimizer, 0.8)
             if fine_tune_encoder:
                 adjust_learning_rate(encoder_optimizer, 0.8)
-        elif epoch > 0 and epoch % 10 == 0:
+        elif epoch > 0 and epoch % 8 == 0:
             adjust_learning_rate(decoder_optimizer, 0.8)
             if fine_tune_encoder:
                 adjust_learning_rate(encoder_optimizer, 0.8)
@@ -229,9 +229,10 @@ def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, de
             if encoder_optimizer is not None:
                 clip_gradient(encoder_optimizer, grad_clip)
         # Update weights
-        decoder_optimizer.step()
         if encoder_optimizer is not None:
             encoder_optimizer.step()
+        decoder_optimizer.step()
+        
         # Keep track of metrics
         top5 = accuracy(scores, targets, 5)
         losses.update(loss.item(), sum(decode_lengths))
