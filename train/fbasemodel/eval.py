@@ -202,7 +202,7 @@ def evaluate(beam_size):
 
 
 if __name__ == '__main__':
-    beam_size = 3
+    beam_size = 5
     score1, score2, score3, score4, score5 = evaluate(beam_size)
     print("\nMetric score's @ beam size of {} is:\n \
           Bleu : {} \n \

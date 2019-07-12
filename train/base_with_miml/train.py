@@ -17,7 +17,7 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-
+prefix = 'base_with_miml'
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512
@@ -161,7 +161,7 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_basewithmiml(epoch, epochs_since_improvement, miml, encoder, decoder,
+        save_checkpoint_basewithmiml(prefix, epoch, epochs_since_improvement, miml, encoder, decoder,
                                      encoder_optimizer, decoder_optimizer, recent_bleu4, is_best)
 
 

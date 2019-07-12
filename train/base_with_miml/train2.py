@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 from src.base_with_miml.model2 import Encoder, MIML, Decoder
 from utils.data import CaptionDataset
-from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml2
+from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml
 from nltk.translate.bleu_score import corpus_bleu
 import os
 from collections import OrderedDict
@@ -17,7 +17,7 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-
+prefix = 'base_with_miml2'
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512
@@ -161,8 +161,8 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_basewithmiml2(epoch, epochs_since_improvement, miml, encoder, decoder,
-                                      encoder_optimizer, decoder_optimizer, recent_bleu4, is_best)
+        save_checkpoint_basewithmiml(prefix, epoch, epochs_since_improvement, miml, encoder, decoder,
+                                     encoder_optimizer, decoder_optimizer, recent_bleu4, is_best)
 
 
 def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, decoder_optimizer, epoch, writer):
