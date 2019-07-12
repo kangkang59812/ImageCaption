@@ -130,7 +130,7 @@ def evaluate(beam_size):
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
             h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
-            awe, _ = decoder.attention(encoder_out, h2, h1)
+            awe, _ = decoder.attention(encoder_out, h1, h2)
             # gate = decoder.sigmoid(decoder.f_beta(h2))
             # awe = gate * awe
 

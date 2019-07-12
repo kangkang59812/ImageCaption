@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from src.base_with_miml.model2 import Encoder, MIML, Decoder
+from src.base_with_miml.model3 import Encoder, MIML, Decoder
 from utils.data import CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml
 from nltk.translate.bleu_score import corpus_bleu
@@ -17,7 +17,7 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-prefix = 'base_with_miml2'
+prefix = 'base_with_miml3'
 # Model parameters
 emb_dim = 512  # dimension of word embeddings
 attention_dim = 512
@@ -25,7 +25,7 @@ attrs_dim = 1024  # dimension of attention linear layers
 decoder_dim = 512  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
@@ -45,7 +45,7 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 score right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml2'
+log_dir = './log_basewithmiml3'
 checkpoint = None  # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
 checkpoint_miml = '/home/lkk/code/ImageCaption/MIML.pth.tar'
 
@@ -200,7 +200,7 @@ def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, de
         # Forward prop.
         # attrs = miml(imgs)
         # imgs = encoder(imgs)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(
+        scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
             miml(imgs), encoder(imgs), caps, caplens)
 
         # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -216,6 +216,7 @@ def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, de
 
         # Calculate loss
         loss = criterion(scores, targets)
+        loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
         # Back prop.
         decoder_optimizer.zero_grad()
         if encoder_optimizer is not None:

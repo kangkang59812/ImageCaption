@@ -6,7 +6,7 @@ from utils.data import CaptionDataset
 from nltk.translate.bleu_score import corpus_bleu
 import torch.nn.functional as F
 from tqdm import tqdm
-from src.base_with_miml.model import Encoder, MIML, Decoder
+from src.base_with_miml.model3 import Encoder, MIML, Decoder
 import os
 from pycocoevalcap.bleu.bleu import Bleu
 from pycocoevalcap.cider.cider import Cider
@@ -129,18 +129,15 @@ def evaluate(beam_size):
 
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
-
+            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
             awe, _ = decoder.attention(encoder_out, h2)
             gate = decoder.sigmoid(decoder.f_beta(h2))
             awe = gate * awe
-
-            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
+            
             h2, c2 = decoder.decode_step2(
-                torch.cat([embeddings, awe], dim=1), (h2, c2))
+                torch.cat([embeddings, awe], dim=1), (h2, c2), h1)
 
-            pre1 = F.normalize(decoder.fc1(h1), p=2, dim=1)
-            pre2 = F.normalize(decoder.fc2(h2), p=2, dim=1)
-            scores = decoder.pre(pre1+pre2)
+            scores = decoder.fc2(decoder.dropout2(h2))
             scores = F.log_softmax(scores, dim=1)
 
             # Add

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from collections import OrderedDict
-from custom_LSTM.custom_lstms import aLSTMCell
+from src.custom_LSTM.custom_lstms import aLSTMCell
 
 
 class MIML(nn.Module):
@@ -261,7 +261,7 @@ class Decoder(nn.Module):
 
         self.dropout2 = nn.Dropout(p=self.dropout)
         self.decode_step2 = aLSTMCell(
-            embed_dim + encoder_dim, decoder_dim, attr_size)  # decoding LSTMCell
+            embed_dim + encoder_dim, decoder_dim, decoder_dim)  # decoding LSTMCell
         # linear layer to find initial hidden state of LSTMCell
         self.init2_h = nn.Linear(encoder_dim, decoder_dim)
         # linear layer to find initial cell state of LSTMCell
