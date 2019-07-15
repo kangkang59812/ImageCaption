@@ -293,7 +293,7 @@ def validate(val_loader, miml, encoder, decoder, criterion, epoch, writer):
 
             attrs = miml(imgs)
             imgs = encoder(imgs)
-            scores, caps_sorted, decode_lengths, sort_ind = decoder(
+            scores, caps_sorted, decode_lengths, alphas,  sort_ind = decoder(
                 attrs, imgs, caps, caplens)
 
             # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -309,7 +309,7 @@ def validate(val_loader, miml, encoder, decoder, criterion, epoch, writer):
 
             # Calculate loss
             loss = criterion(scores, targets)
-
+            loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
             # Keep track of metrics
             losses.update(loss.item(), sum(decode_lengths))
             top5 = accuracy(scores, targets, 5)
