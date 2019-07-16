@@ -91,6 +91,8 @@ class MIML(nn.Module):
         for c in list(self.base_model.children())[-6:]:
             for p in c.parameters():
                 p.requires_grad = True
+        for p in self.sub_concept_layer:
+            p.requires_grad = True
 
     def freeze_all(self):
         for p in self.base_model.parameters():

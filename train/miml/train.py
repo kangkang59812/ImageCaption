@@ -19,11 +19,11 @@ from tensorboardX import SummaryWriter
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-prefix = 'miml'
+prefix = 'miml1024'
 # Model parameters
-emb_dim = 512  # dimension of word embeddings
+emb_dim = 1024  # dimension of word embeddings
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
+decoder_dim = 1024  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -37,10 +37,11 @@ start_epoch = 0
 epochs = 30
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
-batch_size = 32
+batch_size = 64
 workers = 1  # for data-loading; right now, only 1 works with h5py
-# encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
-decoder_lr = 4e-4  # learning rate for decoder
+miml_lr = 1e-4  # learning rate for encoder if fine-tuning
+decoder_lr = 5e-3  # learning rate for decoder
+
 grad_clip = 5.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 score right now
@@ -61,7 +62,7 @@ def main():
     with open(word_map_file, 'r') as j:
         word_map = json.load(j)
 
-    miml = MIML()
+    miml = MIML(freeze=False, fine_tune=True)
 
     pretrained_net_dict = torch.load(
         checkpoint_miml, map_location=lambda storage, loc: storage)['model']
@@ -71,6 +72,8 @@ def main():
         new_state_dict[name] = v
         # load params
     miml.load_state_dict(new_state_dict)
+    miml_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+                                      lr=miml_lr, weight_decay=1e-4)
 
     decoder = Decoder(attrs_dim=attrs_dim, embed_dim=emb_dim,
                       decoder_dim=decoder_dim, attrs_size=attrs_size, vocab_size=len(
@@ -78,7 +81,7 @@ def main():
                       dropout=dropout)
 
     decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-                                         lr=decoder_lr)
+                                         lr=decoder_lr, weight_decay=1e-4)
 
     if checkpoint:
         checkpoint = torch.load(
@@ -112,8 +115,8 @@ def main():
         # Decay learning rate if there is no improvement for 5 consecutive epochs, and terminate training after 20
         if epochs_since_improvement == 20:
             break
-        if epochs_since_improvement > 0 and epochs_since_improvement % 5 == 0:
-            adjust_learning_rate(decoder_optimizer, 0.8)
+        if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
+            adjust_learning_rate(decoder_optimizer, 0.9)
 
         # One epoch's training
         train(train_loader=train_loader,
