@@ -26,7 +26,7 @@ class MIML(nn.Module):
 
         self.sub_concept_layer = nn.Sequential(OrderedDict([
             ('conv1', nn.Conv2d(512, 512, 1)),
-            ('dropout1', nn.Dropout(0)),  # (-1,512,14,14)
+            ('dropout1', nn.Dropout(0.5)),  # (-1,512,14,14)
             ('conv2', nn.Conv2d(512, K*L, 1)),
             # input need reshape to (-1,L,K,H*W)
             ('maxpool1', nn.MaxPool2d((K, 1))),
