@@ -1,23 +1,25 @@
-
-import time
-import torch.backends.cudnn as cudnn
-import torch.optim
-import torch.utils.data
-import torchvision.transforms as transforms
-from torch import nn
-from torch.nn.utils.rnn import pack_padded_sequence
-from src.miml.model import MIML, Decoder
-from utils.data import CaptionDataset
-from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
-from nltk.translate.bleu_score import corpus_bleu
-import json
-import os
-from collections import OrderedDict
+import sys
+sys.path.append('/home/lkk/code/ImageCaption')
 from tensorboardX import SummaryWriter
+from collections import OrderedDict
+import os
+import json
+from nltk.translate.bleu_score import corpus_bleu
+from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_miml
+from utils.data import CaptionDataset
+from src.miml.model import MIML, Decoder
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch import nn
+import torchvision.transforms as transforms
+import torch.utils.data
+import torch.optim
+import torch.backends.cudnn as cudnn
+import time
+
 
 # Data parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
+data_folder = '/home/lkk/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 prefix = 'miml1024'
 # Model parameters
@@ -26,7 +28,7 @@ attrs_dim = 1024  # dimension of attention linear layers
 decoder_dim = 1024  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
@@ -37,7 +39,7 @@ start_epoch = 0
 epochs = 30
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
-batch_size = 64
+batch_size = 128
 workers = 1  # for data-loading; right now, only 1 works with h5py
 miml_lr = 1e-4  # learning rate for encoder if fine-tuning
 decoder_lr = 5e-3  # learning rate for decoder
@@ -72,7 +74,7 @@ def main():
         new_state_dict[name] = v
         # load params
     miml.load_state_dict(new_state_dict)
-    miml_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
+    miml_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, miml.parameters()),
                                       lr=miml_lr, weight_decay=1e-4)
 
     decoder = Decoder(attrs_dim=attrs_dim, embed_dim=emb_dim,
@@ -123,6 +125,7 @@ def main():
               miml=miml,
               decoder=decoder,
               criterion=criterion,
+              miml_optimizer=miml_optimizer,
               decoder_optimizer=decoder_optimizer,
               epoch=epoch,
               writer=writer)
@@ -146,11 +149,11 @@ def main():
             epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_miml(prefix, data_name, epoch, epochs_since_improvement, miml, decoder,
+        save_checkpoint_miml(prefix, data_name, epoch, epochs_since_improvement, miml, decoder, miml_optimizer,
                              decoder_optimizer, recent_bleu4, is_best)
 
 
-def train(train_loader, miml, decoder, criterion, decoder_optimizer, epoch, writer):
+def train(train_loader, miml, decoder, criterion, miml_optimizer, decoder_optimizer, epoch, writer):
     """
     Performs one epoch's training.
 
@@ -203,16 +206,18 @@ def train(train_loader, miml, decoder, criterion, decoder_optimizer, epoch, writ
 
         # Back prop.
         decoder_optimizer.zero_grad()
+        miml_optimizer.zero_grad()
 
         loss.backward()
 
         # Clip gradients
         if grad_clip is not None:
             clip_gradient(decoder_optimizer, grad_clip)
-
+            if miml_optimizer is not None:
+                clip_gradient(miml_optimizer, grad_clip)
         # Update weights
         decoder_optimizer.step()
-
+        miml_optimizer.step()
         # Keep track of metrics
         top5 = accuracy(scores, targets, 5)
         losses.update(loss.item(), sum(decode_lengths))

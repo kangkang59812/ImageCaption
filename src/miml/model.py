@@ -22,7 +22,6 @@ class MIML(nn.Module):
         base_model = torchvision.models.vgg16(pretrained=True)
         base_model = list(base_model.features)[:-1]
         self.base_model = nn.Sequential(*base_model)
-        self.fine_tune(fine_tune)
 
         self.sub_concept_layer = nn.Sequential(OrderedDict([
             ('conv1', nn.Conv2d(512, 512, 1)),
@@ -35,7 +34,7 @@ class MIML(nn.Module):
             # permute(0,2,1) # reshape to (-1,L,1,H*W)
             ('maxpool2', nn.MaxPool2d((1, 196)))
         ]))
-
+        self.fine_tune(fine_tune)
         if freeze:
             self.freeze_all()
         # self.conv1 = nn.Conv2d(512, 512, 1))
@@ -91,7 +90,7 @@ class MIML(nn.Module):
         for c in list(self.base_model.children())[-6:]:
             for p in c.parameters():
                 p.requires_grad = True
-        for p in self.sub_concept_layer:
+        for p in self.sub_concept_layer.parameters():
             p.requires_grad = True
 
     def freeze_all(self):
@@ -145,6 +144,10 @@ class Decoder(nn.Module):
         Initializes some parameters with values from the uniform distribution, for easier convergence.
         """
         self.embedding.weight.data.uniform_(-0.1, 0.1)
+        self.decode_step.weight_hh.data.uniform_(-0.1, 0.1)
+        self.decode_step.weight_ih.data.uniform_(-0.1, 0.1)
+        self.decode_step.bias_hh.data.uniform_(-0.1, 0.1)
+        self.decode_step.bias_ih.data.uniform_(-0.1, 0.1)
         self.fc.bias.data.fill_(0)
         self.fc.weight.data.uniform_(-0.1, 0.1)
 

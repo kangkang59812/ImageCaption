@@ -41,12 +41,13 @@ def save_checkpoint_basewithmiml(prefix, epoch, epochs_since_improvement, miml, 
         torch.save(state, 'BEST_' + filename)
 
 
-def save_checkpoint_miml(prefix, epoch, epochs_since_improvement, miml, decoder, decoder_optimizer,
+def save_checkpoint_miml(prefix, epoch, epochs_since_improvement, miml, decoder, decoder_optimizer, miml_optimizer,
                          bleu4, is_best):
     state = {'epoch': epoch,
              'epochs_since_improvement': epochs_since_improvement,
              'bleu-4': bleu4,
              'miml': miml.state_dict(),
+             'miml_optimizer': miml_optimizer.state_dict(),
              'decoder': decoder.state_dict(),
              'decoder_optimizer': decoder_optimizer.state_dict()}
     filename = prefix + '_checkpoint_' + '.pth.tar'
