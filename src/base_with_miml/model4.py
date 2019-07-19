@@ -20,11 +20,13 @@ class Encoder(nn.Module):
         # for MIML
         model = torchvision.models.resnet101(
             pretrained=True)  # pretrained ImageNet ResNet-101
-        self.miml_features = torch.nn.Sequential(OrderedDict([
+        self.miml_intermidate = torch.nn.Sequential(OrderedDict([
             ('layer2', model.layer2),
-            ('layer3', model.layer3),
-            ('layer4', model.layer4)
-        ]))
+            ('layer3', model.layer3)]))
+
+        self.miml_last = torch.nn.Sequential(OrderedDict([
+            ('layer4', base_model.layer4)]))
+
         dim = 2048
         map_size = 64
         self.K = K
@@ -62,7 +64,7 @@ class Encoder(nn.Module):
         head_out = self.head(images)
 
         # miml
-        miml_features_out = self.miml_features(head_out)
+        miml_features_out = self.miml_last(self.miml_intermidate(head_out))
         # (-1,2048,8,8)
         _, C, H, W = miml_features_out.shape
         conv1_out = self.miml_sub_concept_layer.dropout1(
@@ -98,14 +100,18 @@ class Encoder(nn.Module):
         """
         fine tune block and concept_layer
         """
-        for p in self.miml_features.parameters():
+        for p in self.miml_miml_intermidate.parameters():
+            p.requires_grad = False
+        for p in self.miml_last.parameters():
             p.requires_grad = False
         # If fine-tuning, only fine-tune convolutional blocks 2 through 4
         if blocks == 1:  # 是最后一个block的最后一个块，最后一个block[-30:]
-            for p in list(self.miml_features.parameters())[-9:]:
+            for p in self.miml_last.parameters():
                 p.requires_grad = fine_tune
         elif blocks == 3:
-            for p in list(self.miml_features.parameters()):
+            for p in self.miml_intermidate.parameters():
+                p.requires_grad = fine_tune
+            for p in self.miml_last.parameters():
                 p.requires_grad = fine_tune
 
     def fine_tune2(self, fine_tune=True):
