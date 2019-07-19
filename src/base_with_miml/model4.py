@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchvision
 from collections import OrderedDict
 from src.head import Head
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
@@ -85,7 +86,8 @@ class Encoder(nn.Module):
         attributes = maxpool2_out.squeeze()
 
         # extract image features
-        images_features = self.features_model(head_out)  # (batch_size, 2048, image_size/32, image_size/32)
+        # (batch_size, 2048, image_size/32, image_size/32)
+        images_features = self.features_model(head_out)
         # (batch_size, 2048, encoded_image_size, encoded_image_size)
         imgs_features = self.adaptive_pool(images_features)
         # (batch_size, encoded_image_size, encoded_image_size, 2048)
@@ -116,20 +118,22 @@ class Encoder(nn.Module):
         for p in self.features_model.parameters():
             p.requires_grad = fine_tune
 
+
 class Attention(nn.Module):
     """
     Attention Network.
     """
 
-    def __init__(self, encoder_dim, decoder_dim, attention_dim, dropout=0.5):
-      
+    def __init__(self, encoder_dim, decoder_dim, attention_dim, attrs_dim, dropout=0.5):
+
         super(Attention, self).__init__()
         # linear layer to transform encoded image
         self.encoder_att = nn.Linear(encoder_dim, attention_dim)
         # linear layer to transform decoder's output
         self.decoder_att = nn.Linear(decoder_dim, attention_dim)
 
-        self.attr_att = nn.Linear(decoder_dim, attention_dim)
+        self.attr_att = nn.Linear(attrs_dim, attention_dim)
+
         # linear layer to calculate values to be softmax-ed
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
@@ -137,37 +141,32 @@ class Attention(nn.Module):
         #self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
-    def forward(self, encoder_out, decoder_hidden1, decoder_hidden2):
+    def forward(self, encoder_out, decoder_uphidden, decoder_downhidden):
         """
         Forward propagation.
         """
-        att1 = self.encoder_att(
-            encoder_out)  # (batch_size, num_pixels, attention_dim)
-        att2 = self.decoder_att(decoder_hidden2)  # (batch_size, attention_dim)
+        # 转换 image features, 两路隐藏层状态
+        att1 = self.encoder_att(encoder_out)
 
-        att3 = self.attr_att(decoder_hidden1)
-        # (batch_size, num_pixels)
+        att2 = self.attr_att(decoder_uphidden)
+
+        att3 = self.decoder_att(decoder_downhidden)
+
         att = self.full_att(self.dropout(
-            self.relu(att1 + att2.unsqueeze(1)+att3.unsqueeze(1)))).squeeze(2)
-        alpha = self.softmax(att)  # (batch_size, num_pixels)
+            self.relu(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
+        alpha = self.softmax(att)  # (batch_size, num_pixels, 1)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
 
         return attention_weighted_encoding, alpha
 
+
 class Decoder(nn.Module):
     """
-    MIML's Decoder.
+    Decoder.
     """
 
-    def __init__(self, attrs_dim, attention_dim, embed_dim, decoder_dim, attrs_size, vocab_size, device, encoder_dim=2048, dropout=0.5):
-        '''
-        :param attrs_dim: size of MIML's output: 1024
-        :param embed_dim: embedding size
-        :param decoder_dim: size of decoder's RNN
-        :param attrs_size: size of attr's vocabulary
-        :param dropout: dropout
-        '''
+    def __init__(self, attrs_dim, attention_dim, embed_dim, decoder_dim, vocab_size, device, encoder_dim=2048, dropout=0.5):
         super(Decoder, self).__init__()
 
         self.vocab_size = vocab_size
@@ -180,11 +179,11 @@ class Decoder(nn.Module):
 
         self.embed_dim = embed_dim
 
-        self.attrs_size = attrs_size
+        self.attrs_dim = attrs_dim
 
-        self.init_x0 = nn.Linear(attrs_size, embed_dim)
+        self.init_x0 = nn.Linear(attrs_dim, embed_dim)
 
-        self.dropout1 = nn.Dropout(p=self.dropout)
+        #self.dropout1 = nn.Dropout(p=self.dropout)
         self.decode_step1 = nn.LSTMCell(
             embed_dim, decoder_dim, bias=True)  # decoding LSTMCell
         # linear layer to find initial hidden state of LSTMCell
@@ -192,7 +191,7 @@ class Decoder(nn.Module):
         # linear layer to find initial cell state of LSTMCell
         self.init1_c = nn.Linear(attrs_dim, decoder_dim)
         # linear layer to find scores over vocabulary
-        self.fc1 = nn.Linear(decoder_dim, vocab_size)
+        # self.fc1 = nn.Linear(decoder_dim, vocab_size)
 
         # 下路
         self.encoder_dim = encoder_dim
@@ -200,7 +199,7 @@ class Decoder(nn.Module):
         self.embed_dim = embed_dim
 
         self.attention = Attention(
-            encoder_dim, decoder_dim, attention_dim)  # attention network
+            encoder_dim, decoder_dim, attention_dim, attrs_dim)  # attention network
 
         self.dropout2 = nn.Dropout(p=self.dropout)
         self.decode_step2 = nn.LSTMCell(
@@ -223,8 +222,8 @@ class Decoder(nn.Module):
         Initializes some parameters with values from the uniform distribution, for easier convergence.
         """
         self.embedding.weight.data.uniform_(-0.1, 0.1)
-        self.fc1.bias.data.fill_(0)
-        self.fc1.weight.data.uniform_(-0.1, 0.1)
+        # self.fc1.bias.data.fill_(0)
+        # self.fc1.weight.data.uniform_(-0.1, 0.1)
         self.fc2.bias.data.fill_(0)
         self.fc2.weight.data.uniform_(-0.1, 0.1)
 
@@ -245,41 +244,49 @@ class Decoder(nn.Module):
         for p in self.embedding.parameters():
             p.requires_grad = fine_tune
 
-    def init_hidden_state(self, attrs, encoder_out):
+    def init_hidden_state(self, attrs, encoder_out, zero=False):
         """
         Creates the initial hidden and cell states for the decoder's LSTM
         """
-        h1 = self.init1_h(attrs)
-        c1 = self.init1_c(attrs)
+        batch_size = attrs.shape[0]
+        if zero:
+            h1 = torch.zeros(batch_size, self.decoder_dim).to(
+                device)  # (batch_size, decoder_dim)
+            c1 = torch.zeros(batch_size, self.decoder_dim).to(device)
 
-        mean_encoder_out = encoder_out.mean(dim=1)
-        # mean_encoder_out：[32,2048]转为512维
-        h2 = self.init2_h(mean_encoder_out)  # (batch_size, decoder_dim)
-        c2 = self.init2_c(mean_encoder_out)
+            h2 = torch.zeros(batch_size, self.decoder_dim).to(
+                device)  # (batch_size, decoder_dim)
+            c2 = torch.zeros(batch_size, self.decoder_dim).to(device)
+
+        else:
+            h1 = self.init1_h(attrs)
+            c1 = self.init1_c(attrs)
+
+            mean_encoder_out = encoder_out.mean(dim=1)
+            # mean_encoder_out：[32,2048]转为512维
+            h2 = self.init2_h(mean_encoder_out)  # (batch_size, decoder_dim)
+            c2 = self.init2_c(mean_encoder_out)
 
         return h1, c1, h2, c2
 
     def forward(self, attrs, encoder_out, encoded_captions, caption_lengths):
         """
         Forward propagation.
-
-       :param attrs: attributes, a tensor of dimension (batch_size, attrs_dim)
-       :param encoded_captions: encoded captions, a tensor of dimension (batch_size, max_caption_length)
-       :param caption_lengths: caption lengths, a tensor of dimension (batch_size, 1)
-       :return: scores for vocabulary, sorted encoded captions, decode lengths, weights, sort indices
-       """
+        """
         batch_size = attrs.shape[0]
-        x0 = self.init_x0(attrs)
+
         vocab_size = self.vocab_size
         encoder_dim = encoder_out.size(-1)
 
-        # 下路
         encoder_out = encoder_out.view(batch_size, -1, encoder_dim)
         num_pixels = encoder_out.size(1)
 
         caption_lengths, sort_ind = caption_lengths.squeeze(
             1).sort(dim=0, descending=True)
+
         attrs = attrs[sort_ind]
+        x0 = self.init_x0(attrs)
+
         encoder_out = encoder_out[sort_ind]
         encoded_captions = encoded_captions[sort_ind]
 
@@ -292,10 +299,10 @@ class Decoder(nn.Module):
         # Create tensors to hold word predicion scores
         predictions = torch.zeros(batch_size, max(
             decode_lengths), vocab_size).to(self.device)
-        # alphas = torch.zeros(batch_size, max(
-        #     decode_lengths), num_pixels).to(self.device)
+        alphas = torch.zeros(batch_size, max(
+            decode_lengths), num_pixels).to(self.device)
 
-        h1, c1 = self.decode_step1(x0, (h1, c1))  # (batch_size_t, decoder_dim)
+        h1, c1 = self.decode_step1(x0, (h1, c1))
         for t in range(max(decode_lengths)):
             batch_size_t = sum([l > t for l in decode_lengths])
             # 上
@@ -315,7 +322,3 @@ class Decoder(nn.Module):
 
         return predictions, encoded_captions, decode_lengths, sort_ind
 
-
-encoder = Encoder()
-encoder(torch.randn(2, 3, 256, 256))
-print(encoder)

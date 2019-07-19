@@ -13,7 +13,7 @@ class CaptionDataset(Dataset):
     A PyTorch Dataset class to be used in a PyTorch DataLoader to create batches.
     """
 
-    def __init__(self, data_folder, data_name, split, transform=None):
+    def __init__(self, data_folder, data_name, split, tag_flag=False, transform=None):
         """
         :param data_folder: folder where data files are stored
         :param data_name: base name of processed datasets
@@ -22,7 +22,7 @@ class CaptionDataset(Dataset):
         """
         self.split = split
         assert self.split in {'TRAIN', 'VAL', 'TEST'}
-
+        self.tag_flag = tag_flag
         # Open hdf5 file where images are stored
         self.h = h5py.File(os.path.join(
             data_folder, self.split + '_IMAGES_' + data_name + '.hdf5'), 'r')
@@ -38,6 +38,14 @@ class CaptionDataset(Dataset):
         # Load caption lengths (completely into memory)
         with open(os.path.join(data_folder, self.split + '_CAPLENS_' + data_name + '.json'), 'r') as j:
             self.caplens = json.load(j)
+
+        # word map
+        with open(os.path.join(data_folder, 'WORDMAP_coco_5_cap_per_img_5_min_word_freq' + '.json'), 'r') as j:
+            self.word_map = json.load(j)
+            self.rev_word_map = {v: k for k, v in self.word_map.items()}
+        # 加载attributes map
+        with open(os.path.join(data_folder, 'attributes_map' + '.json'), 'r') as j:
+            self.attributes_map = json.load(j)
 
         # PyTorch transformation pipeline for the image (normalizing, etc.)
         self.transform = transform
@@ -55,13 +63,32 @@ class CaptionDataset(Dataset):
 
         caplen = torch.LongTensor([self.caplens[i]])
 
+        if self.tag_flag:
+            all_captions = torch.LongTensor(self.captions[((i // self.cpi) * self.cpi):(((i // self.cpi) * self.cpi) + self.cpi)])
+            all_caplens = torch.LongTensor(self.caplens[((i // self.cpi) * self.cpi):(((i // self.cpi) * self.cpi) + self.cpi)])
+            tags = set()
+            for c, l in zip(all_captions, all_caplens):
+                for j in range(1, l.item()):
+                    if self.rev_word_map[c[j].item()] in self.attributes_map['word_map'].keys():
+                        tags.add(self.attributes_map['word_map'][self.rev_word_map[c[j].item()]])
+
+            tags_target = torch.zeros(len(self.attributes_map['word_map']))
+            tags_target[list(map(lambda n:n-1, list(tags)))]=1
+            tags_target = torch.Tensor(tags_target)
+
         if self.split is 'TRAIN':
-            return img, caption, caplen
+            if self.tag_flag:
+                return img, caption, caplen, tags_target
+            else:
+                return img, caption, caplen
         else:
             # For validation of testing, also return all 'captions_per_image' captions to find BLEU-4 score
-            all_captions = torch.LongTensor(
-                self.captions[((i // self.cpi) * self.cpi):(((i // self.cpi) * self.cpi) + self.cpi)])
-            return img, caption, caplen, all_captions
+            # all_captions = torch.LongTensor(
+            #     self.captions[((i // self.cpi) * self.cpi):(((i // self.cpi) * self.cpi) + self.cpi)])
+            if self.tag_flag:
+                return img, caption, caplen, all_captions, tags_target
+            else:
+                return img, caption, caplen, all_captions
 
     def __len__(self):
         return self.dataset_size
@@ -230,9 +257,10 @@ if __name__ == "__main__":
     features_folder = '/home/lkk/dataset/'
     data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 
-    dataset = BothCaptionDataset(data_folder, features_folder, data_name, 'TRAIN')
+    dataset = CaptionDataset(
+        data_folder, data_name, 'TRAIN')
 
     # 每5个同一张图，不同captions
     # [36,2048]的features，52长度的caption，里面是单词的索引，根据长度多余的补0， caption实际长度
-    data = dataset[0]
+    data = dataset[10]
     print('')
