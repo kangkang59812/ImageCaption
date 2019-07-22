@@ -12,7 +12,7 @@ class Encoder(nn.Module):
            { conv }
     '''
 
-    def __init__(self, basemodel='res101', encoded_image_size=14, K=20, L=1024, fine_tune1=True, fine_tune2=True):
+    def __init__(self, basemodel='res101', encoded_image_size=14, K=20, L=1024, fine_tune1=True, blocks=1, fine_tune2=True, freeze1=False, freeze2=False):
         super(Encoder, self).__init__()
         self.enc_image_size = encoded_image_size
         self.head = Head(model=basemodel)
@@ -25,7 +25,7 @@ class Encoder(nn.Module):
             ('layer3', model.layer3)]))
 
         self.miml_last = torch.nn.Sequential(OrderedDict([
-            ('layer4', base_model.layer4)]))
+            ('layer4', model.layer4)]))
 
         dim = 2048
         map_size = 64
@@ -43,8 +43,9 @@ class Encoder(nn.Module):
             ('maxpool2', nn.MaxPool2d((1, map_size)))
         ]))
 
-        self.fine_tune1(fine_tune=fine_tune1, blocks=1)
-
+        self.fine_tune1(fine_tune=fine_tune1, blocks=blocks)
+        if freeze1:
+            self.freeze1()
         # for image features
         model = torchvision.models.resnet101(
             pretrained=True)  # pretrained ImageNet ResNet-101
@@ -56,6 +57,8 @@ class Encoder(nn.Module):
         self.adaptive_pool = nn.AdaptiveAvgPool2d(
             (encoded_image_size, encoded_image_size))
         self.fine_tune2(fine_tune=fine_tune2)
+        if freeze2:
+            self.freeze2()
 
     def forward(self, images):
         """
@@ -100,7 +103,7 @@ class Encoder(nn.Module):
         """
         fine tune block and concept_layer
         """
-        for p in self.miml_miml_intermidate.parameters():
+        for p in self.miml_intermidate.parameters():
             p.requires_grad = False
         for p in self.miml_last.parameters():
             p.requires_grad = False
@@ -108,10 +111,16 @@ class Encoder(nn.Module):
         if blocks == 1:  # 是最后一个block的最后一个块，最后一个block[-30:]
             for p in self.miml_last.parameters():
                 p.requires_grad = fine_tune
+
+            for p in self.miml_sub_concept_layer.parameters():
+                p.requires_grad = fine_tune
+
         elif blocks == 3:
             for p in self.miml_intermidate.parameters():
                 p.requires_grad = fine_tune
             for p in self.miml_last.parameters():
+                p.requires_grad = fine_tune
+            for p in self.miml_sub_concept_layer.parameters():
                 p.requires_grad = fine_tune
 
     def fine_tune2(self, fine_tune=True):
@@ -123,6 +132,18 @@ class Encoder(nn.Module):
 
         for p in self.features_model.parameters():
             p.requires_grad = fine_tune
+
+    def freeze1(self):
+        for p in self.miml_intermidate.parameters():
+            p.requires_grad = False
+        for p in self.miml_last.parameters():
+            p.requires_grad = False
+        for p in self.miml_sub_concept_layer.parameters():
+            p.requires_grad = False
+
+    def freeze2(self):
+        for p in self.features_model.parameters():
+            p.requires_grad = False
 
 
 class Attention(nn.Module):
@@ -327,4 +348,3 @@ class Decoder(nn.Module):
             predictions[:batch_size_t, t, :] = preds
 
         return predictions, encoded_captions, decode_lengths, sort_ind
-
