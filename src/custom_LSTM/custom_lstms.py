@@ -33,6 +33,9 @@ class LSTMCell(nn.Module):
 
 
 class aLSTMCell(nn.Module):
+    '''
+    custom LSTM with attributes input
+    '''
     def __init__(self, input_size, hidden_size, attrhidden_size):
         super(aLSTMCell, self).__init__()
         self.input_size = input_size
