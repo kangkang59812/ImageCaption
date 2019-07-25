@@ -319,7 +319,7 @@ class Decoder(nn.Module):
 
         embeddings = self.embedding(encoded_captions)
 
-        h1, c1, h2, c2 = self.init_hidden_state(attrs, encoder_out)
+        h1, c1, h2, c2 = self.init_hidden_state(attrs, encoder_out, zero=True)
 
         decode_lengths = (caption_lengths - 1).tolist()
 
@@ -333,11 +333,13 @@ class Decoder(nn.Module):
         for t in range(max(decode_lengths)):
             batch_size_t = sum([l > t for l in decode_lengths])
             # 上
-            h1, c1 = self.decode_step1(
-                embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
+
             # 下
             attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
                                                                 h2[:batch_size_t])
+
+            h1, c1 = self.decode_step1(
+                embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
             # gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
             # attention_weighted_encoding = gate * attention_weighted_encoding
             h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,

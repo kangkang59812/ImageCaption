@@ -97,7 +97,7 @@ def main():
     )
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=4)
+        optimizer, T_max=8)
     # if checkpoint:
     #     checkpoint = torch.load(
     #         checkpoint, map_location=lambda storage, loc: storage)
