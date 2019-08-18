@@ -19,7 +19,7 @@ import json
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/ImageCaption/BEST_base_with_miml4_checkpoint_4.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/base_with_miml4_2loss_checkpoint_19.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
 word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
