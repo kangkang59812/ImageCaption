@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision
 from collections import OrderedDict
 from src.head import Head
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
@@ -151,7 +151,7 @@ class Attention(nn.Module):
     Attention Network.
     """
 
-    def __init__(self, encoder_dim, decoder_dim, attention_dim, attrs_dim, dropout=0.5):
+    def __init__(self, encoder_dim, decoder_dim, attention_dim, dropout=0.5):
 
         super(Attention, self).__init__()
         # linear layer to transform encoded image
@@ -159,13 +159,13 @@ class Attention(nn.Module):
         # linear layer to transform decoder's output
         self.decoder_att = nn.Linear(decoder_dim, attention_dim)
 
-        self.attr_att = nn.Linear(attrs_dim, attention_dim)
+        self.attr_att = nn.Linear(decoder_dim, attention_dim)
 
         # linear layer to calculate values to be softmax-ed
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
-        self.relu = nn.ReLU()
-        #self.tanh = nn.Tanh()
+        #self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
     def forward(self, encoder_out, decoder_uphidden, decoder_downhidden):
@@ -180,7 +180,7 @@ class Attention(nn.Module):
         att3 = self.decoder_att(decoder_downhidden)
 
         att = self.full_att(self.dropout(
-            self.relu(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
+            self.tanh(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
         alpha = self.softmax(att)  # (batch_size, num_pixels, 1)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
@@ -226,7 +226,7 @@ class Decoder(nn.Module):
         self.embed_dim = embed_dim
 
         self.attention = Attention(
-            encoder_dim, decoder_dim, attention_dim, attrs_dim)  # attention network
+            encoder_dim, decoder_dim, attention_dim)  # attention network
 
         self.dropout2 = nn.Dropout(p=self.dropout)
         self.decode_step2 = nn.LSTMCell(

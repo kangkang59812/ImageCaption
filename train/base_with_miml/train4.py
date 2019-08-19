@@ -17,15 +17,15 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-prefix = 'base_with_miml4_2loss'
+prefix = 'base_with_miml4'
 # Model parameters
-emb_dim = 1024  # dimension of word embeddings
-attention_dim = 1024
+emb_dim = 512  # dimension of word embeddings
+attention_dim = 512
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 1024  # dimension of decoder RNN
-attrs_size = 1024
+decoder_dim = 512  # dimension of decoder RNN
+# attrs_size = 1024
 dropout = 0.5
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
@@ -33,17 +33,17 @@ cudnn.benchmark = True
 # Training parameters
 start_epoch = 0
 # number of epochs to train for (if early stopping is not triggered)
-epochs = 30
+epochs = 20
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
 batch_size = 16
 workers = 0  # for data-loading; right now, only 1 works with h5py
 
-encoder_lr1_1 = 1e-5  # MIML的resnet block if fine-tuning
+encoder_lr1_1 = 2e-5  # MIML的resnet block if fine-tuning
 blocks = 1
-encoder_lr1_2 = 1e-4  # MIML的 concept_layer if fine-tuning
+encoder_lr1_2 = 2e-4  # MIML的 concept_layer if fine-tuning
 
-encoder_lr2 = 1e-4  # 提取特征的resnet block if fine-tuning
+encoder_lr2 = 2e-4  # 提取特征的resnet block if fine-tuning
 
 decoder_lr = 4e-4  # learning rate for decoder
 grad_clip = 5.  # clip gradients at an absolute value of
@@ -51,7 +51,7 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 scor right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml4_2loss'
+log_dir = './log_basewithmiml4'
 checkpoint = None  # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
 tag_flag = True
 miml_checkpoint = '/home/lkk/code/ImageCaption/checkpoint_ResNet_epoch_22.pth.tar'
@@ -96,28 +96,29 @@ def main():
          {'params': decoder.parameters(), 'lr': decoder_lr}]
     )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=8)
-    # if checkpoint:
-    #     checkpoint = torch.load(
-    #         checkpoint, map_location=lambda storage, loc: storage)
-    #     best_bleu4 = checkpoint['bleu-4']
-    #     start_epoch = checkpoint['epoch']+1
-    #     epochs_since_improvement = checkpoint['epochs_since_improvement']
-    #     miml.load_state_dict(checkpoint['miml'])
-    #     encoder.load_state_dict(checkpoint['encoder'])
-    #     decoder.load_state_dict(checkpoint['decoder'])
-    #     encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer'])
-    #     decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=8)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=3,gamma=0.9)
+    if checkpoint:
+        checkpoint = torch.load(
+            checkpoint, map_location=lambda storage, loc: storage)
+        best_bleu4 = checkpoint['bleu-4']
+        start_epoch = checkpoint['epoch']+1
+        epochs_since_improvement = checkpoint['epochs_since_improvement']
+        miml.load_state_dict(checkpoint['miml'])
+        encoder.load_state_dict(checkpoint['encoder'])
+        decoder.load_state_dict(checkpoint['decoder'])
+        encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer'])
+        decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
 
-    #     del checkpoint  # dereference seems crucial
-    #     torch.cuda.empty_cache()
+        del checkpoint  # dereference seems crucial
+        torch.cuda.empty_cache()
 
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    criterion2 = nn.BCELoss()
+    # criterion2 = nn.BCELoss()
     # Custom dataloaders
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -150,7 +151,6 @@ def main():
               encoder=encoder,
               decoder=decoder,
               criterion=criterion,
-              criterion2=criterion2,
               optimizer=optimizer,
               epoch=epoch,
               writer=writer)
@@ -160,7 +160,6 @@ def main():
                                 encoder=encoder,
                                 decoder=decoder,
                                 criterion=criterion,
-                                criterion2=criterion2,
                                 epoch=epoch,
                                 writer=writer)
 
@@ -180,7 +179,7 @@ def main():
                                       optimizer, scheduler, recent_bleu4, is_best)
 
 
-def train(train_loader, encoder, decoder, criterion, criterion2, optimizer, epoch, writer):
+def train(train_loader, encoder, decoder, criterion, optimizer, epoch, writer):
     """
     Performs one epoch's training.
     """
@@ -205,7 +204,7 @@ def train(train_loader, encoder, decoder, criterion, criterion2, optimizer, epoc
         caplens = caplens.to(device)
         tags_target = tags_target.to(device)
         attributes, imgs_features = encoder(imgs)
-        loss2 = criterion2(attributes, tags_target)
+        # loss2 = criterion2(attributes, tags_target)
         scores, caps_sorted, decode_lengths, sort_ind = decoder(
             attributes, imgs_features, caps, caplens)
 
@@ -224,7 +223,7 @@ def train(train_loader, encoder, decoder, criterion, criterion2, optimizer, epoc
         loss = criterion(scores, targets)  # + loss2
         # Back prop.
         optimizer.zero_grad()
-        loss2.backward(retain_graph=True)
+       #  loss2.backward(retain_graph=True)
         loss.backward()
 
         # Clip gradients
@@ -256,7 +255,7 @@ def train(train_loader, encoder, decoder, criterion, criterion2, optimizer, epoc
                                                                           top5=top5accs))
 
 
-def validate(val_loader, encoder, decoder, criterion, criterion2, epoch, writer):
+def validate(val_loader, encoder, decoder, criterion, epoch, writer):
     """
     Performs one epoch's validation.
     """
@@ -286,7 +285,7 @@ def validate(val_loader, encoder, decoder, criterion, criterion2, epoch, writer)
             # Forward prop.
 
             attributes, imgs_features = encoder(imgs)
-            loss2 = criterion2(attributes, tags_target)
+           
             scores, caps_sorted, decode_lengths, sort_ind = decoder(
                 attributes, imgs_features, caps, caplens)
 
@@ -302,7 +301,7 @@ def validate(val_loader, encoder, decoder, criterion, criterion2, epoch, writer)
                 targets, decode_lengths, batch_first=True)
 
             # Calculate loss
-            loss = criterion(scores, targets) + loss2
+            loss = criterion(scores, targets) # + loss2
 
             # Keep track of metrics
             losses.update(loss.item(), sum(decode_lengths))
