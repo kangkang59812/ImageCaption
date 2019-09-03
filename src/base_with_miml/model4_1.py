@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision
 from collections import OrderedDict
 from src.head import Head
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
@@ -291,10 +291,9 @@ class Decoder(nn.Module):
         else:
             h1 = self.init1_h(attrs)
             c1 = self.init1_c(attrs)
-
             mean_encoder_out = encoder_out.mean(dim=1)
             # mean_encoder_out：[32,2048]转为512维
-            h2 = self.init2_h(mean_encoder_out)  # (batch_size, decoder_dim)
+            h2 = self.init2_h(mean_encoder_out) # (batch_size, decoder_dim)
             c2 = self.init2_c(mean_encoder_out)
 
         return h1, c1, h2, c2
@@ -338,11 +337,13 @@ class Decoder(nn.Module):
             # 上
 
             # 下
-            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
-                                                                h2[:batch_size_t])
 
             h1, c1 = self.decode_step1(
                 embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
+
+            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
+                                                                h2[:batch_size_t])
+
             # gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
             # attention_weighted_encoding = gate * attention_weighted_encoding
             h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,

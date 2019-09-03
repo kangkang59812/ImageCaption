@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from src.base_with_miml.model4 import Encoder, Decoder
+from src.base_with_miml.model4_1 import Encoder, Decoder
 from utils.data import CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml4
 from nltk.translate.bleu_score import corpus_bleu
@@ -17,7 +17,7 @@ import json
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
-prefix = 'base_with_miml4'
+prefix = 'base_with_miml4_1'
 # Model parameters
 emb_dim = 1024  # dimension of word embeddings
 attention_dim = 1024
@@ -25,7 +25,7 @@ attrs_dim = 1024  # dimension of attention linear layers
 decoder_dim = 1024  # dimension of decoder RNN
 # attrs_size = 1024
 dropout = 0.5
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
@@ -51,13 +51,13 @@ alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as i
 best_bleu4 = 0.  # BLEU-4 scor right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml4_9_2'
+log_dir = './log_basewithmiml4_1_9_2'
 # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
-# '/home/lkk/code/ImageCaption/model4_9_2/base_with_miml4_checkpoint_0.pth.tar'
+# '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_0.pth.tar'
 checkpoint = None
 tag_flag = True
 miml_checkpoint = '/home/lkk/code/ImageCaption/checkpoint_ResNet_epoch_22.pth.tar'
-save_path = '/home/lkk/code/ImageCaption/model4_9_2'
+save_path = '/home/lkk/code/ImageCaption/model4_1_9_2'
 
 
 def main():
@@ -117,6 +117,7 @@ def main():
         del checkpoint  # dereference seems crucial
         torch.cuda.empty_cache()
     else:
+
         encoder = encoder.to(device)
         decoder = decoder.to(device)
 
