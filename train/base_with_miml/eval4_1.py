@@ -6,7 +6,7 @@ from utils.data import CaptionDataset
 from nltk.translate.bleu_score import corpus_bleu
 import torch.nn.functional as F
 from tqdm import tqdm
-from src.base_with_miml.model4 import Encoder, Decoder
+from src.base_with_miml.model4_1 import Encoder, Decoder
 import os
 from pycocoevalcap.bleu.bleu import Bleu
 from pycocoevalcap.cider.cider import Cider
@@ -19,11 +19,11 @@ import json
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/ImageCaption/model4_9_2/base_with_miml4_checkpoint_16.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_16.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
 word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
 
@@ -125,10 +125,12 @@ def evaluate(beam_size):
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
 
+            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
+
             awe, _ = decoder.attention(encoder_out, h1, h2)
             # gate = decoder.sigmoid(decoder.f_beta(h2))
             # awe = gate * awe
-            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
+            
             h2, c2 = decoder.decode_step2(
                 torch.cat([embeddings, awe], dim=1), (h2, c2))
 
