@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchvision
 from collections import OrderedDict
 from src.head import Head
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
@@ -167,8 +167,8 @@ class Attention(nn.Module):
         # linear layer to calculate values to be softmax-ed
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
-        #self.relu = nn.ReLU()
-        self.tanh = nn.Tanh()
+        self.relu = nn.ReLU()
+        #self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
     def forward(self, encoder_out, decoder_uphidden, decoder_downhidden):
@@ -183,7 +183,7 @@ class Attention(nn.Module):
         att3 = self.decoder_att(decoder_downhidden)
 
         att = self.full_att(self.dropout(
-            self.tanh(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
+            self.relu(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
         alpha = self.softmax(att)  # (batch_size, num_pixels, 1)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
@@ -256,6 +256,20 @@ class Decoder(nn.Module):
         # self.fc1.weight.data.uniform_(-0.1, 0.1)
         self.fc2.bias.data.fill_(0)
         self.fc2.weight.data.uniform_(-0.1, 0.1)
+        nn.init.orthogonal_(self.decode_step1.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step1.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.decode_step1.bias_hh, 0)
+        nn.init.constant_(self.decode_step1.bias_ih, 0)
+
+        nn.init.orthogonal_(self.decode_step2.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step2.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.decode_step2.bias_hh, 0)
+        nn.init.constant_(self.decode_step2.bias_ih, 0)
+     
 
     def load_pretrained_embeddings(self, embeddings):
         """

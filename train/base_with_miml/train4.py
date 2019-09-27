@@ -15,17 +15,17 @@ from tensorboardX import SummaryWriter
 import json
 # Data parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+data_folder = '/home/lkk/datasets/flickr30k/'
+data_name = 'flickr30_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 prefix = 'base_with_miml4'
 # Model parameters
-emb_dim = 1024  # dimension of word embeddings
-attention_dim = 1024
+emb_dim = 300  # dimension of word embeddings
+attention_dim = 512
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 1024  # dimension of decoder RNN
+decoder_dim = 512  # dimension of decoder RNN
 # attrs_size = 1024
 dropout = 0.5
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
@@ -45,19 +45,19 @@ encoder_lr1_2 = 2e-4  # MIML的 concept_layer if fine-tuning
 
 encoder_lr2 = 1e-4  # 提取特征的resnet block if fine-tuning
 
-decoder_lr = 8e-4  # learning rate for decoder
+decoder_lr = 4e-4  # learning rate for decoder
 grad_clip = 3.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 scor right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml4_9_2'
+log_dir = './log_basewithmiml4_9_21'
 # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
 # '/home/lkk/code/ImageCaption/model4_9_2/base_with_miml4_checkpoint_0.pth.tar'
 checkpoint = None
 tag_flag = True
 miml_checkpoint = '/home/lkk/code/ImageCaption/checkpoint_ResNet_epoch_22.pth.tar'
-save_path = '/home/lkk/code/ImageCaption/model4_9_2'
+save_path = '/home/lkk/code/ImageCaption/flickr4_9_21'
 
 
 def main():
@@ -94,14 +94,14 @@ def main():
     #    {'params': filter(lambda p: p.requires_grad, encoder.miml_last.parameters(
     #    )), 'lr': encoder_lr1_1}
     optimizer = torch.optim.Adam(
-        [{'params': encoder.features_model.parameters(), 'lr': encoder_lr2},
-         {'params': decoder.parameters(), 'lr': decoder_lr}]
+        [{'params': encoder.features_model.parameters(), 'lr': encoder_lr2,'weight_deacy':1e-2},
+         {'params': decoder.parameters(), 'lr': decoder_lr,'weight_deacy':1e-1}]
     )
 
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     #     optimizer, T_max=8)
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=3, gamma=0.9)
+        optimizer, step_size=2, gamma=0.6)
     if checkpoint:
         checkpoint = torch.load(
             checkpoint, map_location=lambda storage, loc: storage)

@@ -16,23 +16,23 @@ from pycocoevalcap.spice.spice import Spice
 import json
 # Parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+data_folder = '/home/lkk/datasets/flickr30k/'
+data_name = 'flickr30_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_16.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/filckr4_1_9_26/base_with_miml4_1_checkpoint_6.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
-word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
+word_map_file = '/home/lkk/datasets/flickr30k/WORDMAP_flickr30_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
 
-emb_dim = 1024  # dimension of word embeddings
+emb_dim = 300  # dimension of word embeddings
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 1024  # dimension of decoder RNN
+decoder_dim = 512  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
-attention_dim = 1024
+attention_dim = 512
 # Load word map (word2ix)
 with open(word_map_file, 'r') as j:
     word_map = json.load(j)
@@ -70,7 +70,7 @@ def evaluate(beam_size):
     loader = torch.utils.data.DataLoader(
         CaptionDataset(data_folder, data_name, 'TEST',
                        transform=transforms.Compose([normalize])),
-        batch_size=1, shuffle=True, num_workers=1, pin_memory=False)
+        batch_size=1, shuffle=True, num_workers=0, pin_memory=False)
 
     # TODO: Batched Beam Search
     # Therefore, do not use a batch_size greater than 1 - IMPORTANT!
@@ -227,8 +227,8 @@ def evaluate(beam_size):
 
 if __name__ == '__main__':
     beam_size = 3
-
     score1, score2, score3, score4, score5 = evaluate(beam_size)
+    print('10模型')
     print("\nMetric score's @ beam size of {} is:\n \
           Bleu : {} \n \
           Meteor : {} \n \

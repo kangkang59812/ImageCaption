@@ -15,15 +15,16 @@ from tensorboardX import SummaryWriter
 import json
 # Data parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+data_folder = '/home/lkk/datasets/flickr8k/'
+# base name shared by data files
+data_name = 'flickr_5_cap_per_img_5_min_word_freq'
 prefix = 'base_with_miml5'
 # Model parameters
 emb_dim = 1024  # dimension of word embeddings
 attention_dim = 1024
 attrs_dim = 1024  # dimension of attention linear layers
 decoder_dim = 1024  # dimension of decoder RNN
-attrs_size = 1024
+# attrs_size = 1024
 dropout = 0.5
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # sets device for model and PyTorch tensors
@@ -33,41 +34,44 @@ cudnn.benchmark = True
 # Training parameters
 start_epoch = 0
 # number of epochs to train for (if early stopping is not triggered)
-epochs = 30
+epochs = 20
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
 batch_size = 16
-workers = 1  # for data-loading; right now, only 1 works with h5py
+workers = 0  # for data-loading; right now, only 1 works with h5py
 
-encoder_lr1_1 = 1e-5  # MIML的resnet block if fine-tuning
+encoder_lr1_1 = 2e-5  # MIML的resnet block if fine-tuning
 blocks = 1
-encoder_lr1_2 = 1e-4  # MIML的 concept_layer if fine-tuning
+encoder_lr1_2 = 2e-4  # MIML的 concept_layer if fine-tuning
 
 encoder_lr2 = 1e-4  # 提取特征的resnet block if fine-tuning
 
-decoder_lr = 4e-4  # learning rate for decoder
-grad_clip = 3.  # clip gradients at an absolute value of
+decoder_lr = 2e-4  # learning rate for decoder
+grad_clip = 2.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 scor right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml5'
-checkpoint = None  # './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
-
+log_dir = './log_basewithmiml5_9_8'
+# './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
+# '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_0.pth.tar'
+# '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_9.pth.tar'
+checkpoint = None
+tag_flag = True
 miml_checkpoint = '/home/lkk/code/ImageCaption/checkpoint_ResNet_epoch_22.pth.tar'
+save_path = '/home/lkk/code/ImageCaption/model5_9_8'
 
 
 def main():
-    global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map, miml_checkpoint, blocks
+    global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map, miml_checkpoint, blocks, tag_flag
     word_map_file = os.path.join(data_folder, 'WORDMAP_' + data_name + '.json')
     with open(word_map_file, 'r') as j:
         word_map = json.load(j)
 
-    encoder = Encoder(fine_tune1=fine_tune_encoder,
+    encoder = Encoder(fine_tune1=False,
                       blocks=blocks, fine_tune2=fine_tune_encoder)
     # 加载miml
-    miml_checkpoint = torch.load(
-        miml_checkpoint, map_location={'cuda:0': 'cuda:1'})
+    miml_checkpoint = torch.load(miml_checkpoint)
     encoder.miml_intermidate.load_state_dict(
         miml_checkpoint['intermidate'])
     encoder.miml_last.load_state_dict(miml_checkpoint['last'])
@@ -87,63 +91,56 @@ def main():
                       device=device,
                       dropout=dropout)
     # decoder_optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, decoder.parameters()),
-    #                                      lr=decoder_lr)
+    #
+    #{'params': filter(lambda p: p.requires_grad, encoder.miml_intermidate.parameters()), 'lr': encoder_lr1_1},
+    #    {'params': filter(lambda p: p.requires_grad, encoder.miml_last.parameters(
+    #    )), 'lr': encoder_lr1_1}
     optimizer = torch.optim.Adam(
-        [{'params': filter(lambda p: p.requires_grad, encoder.miml_intermidate.parameters()), 'lr': encoder_lr1_1},
-         {'params': filter(lambda p: p.requires_grad, encoder.miml_last.parameters(
-         )), 'lr': encoder_lr1_1},
-         {'params': encoder.miml_sub_concept_layer.parameters(), 'lr': encoder_lr1_2},
-         {'params': encoder.features_model.parameters(), 'lr': encoder_lr2},
+        [{'params': encoder.features_model.parameters(), 'lr': encoder_lr2},
          {'params': decoder.parameters(), 'lr': decoder_lr}]
     )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=4)
-    # if checkpoint:
-    #     checkpoint = torch.load(
-    #         checkpoint, map_location=lambda storage, loc: storage)
-    #     best_bleu4 = checkpoint['bleu-4']
-    #     start_epoch = checkpoint['epoch']+1
-    #     epochs_since_improvement = checkpoint['epochs_since_improvement']
-    #     miml.load_state_dict(checkpoint['miml'])
-    #     encoder.load_state_dict(checkpoint['encoder'])
-    #     decoder.load_state_dict(checkpoint['decoder'])
-    #     encoder_optimizer.load_state_dict(checkpoint['encoder_optimizer'])
-    #     decoder_optimizer.load_state_dict(checkpoint['decoder_optimizer'])
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=8)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer, step_size=3, gamma=0.6)
+    if checkpoint:
+        checkpoint = torch.load(
+            checkpoint, map_location=lambda storage, loc: storage)
+        best_bleu4 = checkpoint['bleu-4']
+        start_epoch = checkpoint['epoch']+1
+        #epochs_since_improvement = checkpoint['epochs_since_improvement']
+        encoder.load_state_dict(checkpoint['encoder'])
+        decoder.load_state_dict(checkpoint['decoder'])
+        encoder = encoder.to(device)
+        decoder = decoder.to(device)
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        adjust_learning_rate(optimizer, 0.5)
+        # scheduler.load_state_dict(checkpoint['scheduler'])
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=3, gamma=0.6, last_epoch=9)
+        del checkpoint  # dereference seems crucial
+        torch.cuda.empty_cache()
+    else:
 
-    #     del checkpoint  # dereference seems crucial
-    #     torch.cuda.empty_cache()
-
-    encoder = encoder.to(device)
-    decoder = decoder.to(device)
+        encoder = encoder.to(device)
+        decoder = decoder.to(device)
 
     criterion = nn.CrossEntropyLoss()
-
+    # criterion2 = nn.BCELoss()
     # Custom dataloaders
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     train_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'TRAIN',
+        CaptionDataset(data_folder, data_name, 'TRAIN', tag_flag=tag_flag,
                        transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'VAL',
+        CaptionDataset(data_folder, data_name, 'VAL', tag_flag=tag_flag,
                        transform=transforms.Compose([normalize])),
         batch_size=batch_size, shuffle=True, num_workers=workers, pin_memory=True)
     writer = SummaryWriter(log_dir=log_dir)
     for epoch in range(start_epoch, epochs):
-
-        # # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        # if epochs_since_improvement == 10:
-        #     break
-        # if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
-        #     adjust_learning_rate(decoder_optimizer, 0.8)
-        #     if fine_tune_encoder:
-        #         adjust_learning_rate(encoder_optimizer, 0.8)
-        # elif epoch > 0 and epoch % 8 == 0:
-        #     adjust_learning_rate(decoder_optimizer, 0.8)
-        #     if fine_tune_encoder:
-        #         adjust_learning_rate(encoder_optimizer, 0.8)
 
         scheduler.step()
         # One epoch's training
@@ -175,7 +172,7 @@ def main():
         #     epochs_since_improvement = 0
 
         # Save checkpoint
-        save_checkpoint_basewithmiml4(prefix, epoch, encoder, decoder,
+        save_checkpoint_basewithmiml4(save_path, prefix, epoch, encoder, decoder,
                                       optimizer, scheduler, recent_bleu4, is_best)
 
 
@@ -195,15 +192,16 @@ def train(train_loader, encoder, decoder, criterion, optimizer, epoch, writer):
     start = time.time()
 
     # Batches
-    for i, (imgs, caps, caplens) in enumerate(train_loader):
+    for i, (imgs, caps, caplens, tags_target) in enumerate(train_loader):
         data_time.update(time.time() - start)
 
         # Move to GPU, if available
         imgs = imgs.to(device)
         caps = caps.to(device)
         caplens = caplens.to(device)
-
+        #tags_target = tags_target.to(device)
         attributes, imgs_features = encoder(imgs)
+        # loss2 = criterion2(attributes, tags_target)
         scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
             attributes, imgs_features, caps, caplens)
 
@@ -219,11 +217,11 @@ def train(train_loader, encoder, decoder, criterion, optimizer, epoch, writer):
             targets, decode_lengths, batch_first=True)
 
         # Calculate loss
-        loss = criterion(scores, targets)
+        loss = criterion(scores, targets)  # + loss2
         loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
         # Back prop.
         optimizer.zero_grad()
-
+        # loss2.backward(retain_graph=True)
         loss.backward()
 
         # Clip gradients
@@ -275,16 +273,17 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
     with torch.no_grad():
 
         # Batches
-        for i, (imgs, caps, caplens, allcaps) in enumerate(val_loader):
+        for i, (imgs, caps, caplens, allcaps, tags_target) in enumerate(val_loader):
 
             # Move to device, if available
             imgs = imgs.to(device)
             caps = caps.to(device)
             caplens = caplens.to(device)
-
+            tags_target = tags_target.to(device)
             # Forward prop.
 
             attributes, imgs_features = encoder(imgs)
+
             scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
                 attributes, imgs_features, caps, caplens)
 
@@ -300,7 +299,7 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
                 targets, decode_lengths, batch_first=True)
 
             # Calculate loss
-            loss = criterion(scores, targets)
+            loss = criterion(scores, targets)  # + loss2
             loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
             # Keep track of metrics
             losses.update(loss.item(), sum(decode_lengths))

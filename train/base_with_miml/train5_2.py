@@ -5,7 +5,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
-from src.base_with_miml.model4_1 import Encoder, Decoder
+from src.base_with_miml.model5_2 import Encoder, Decoder
 from utils.data import CaptionDataset
 from utils.utils import AverageMeter, accuracy, adjust_learning_rate, clip_gradient, save_checkpoint_basewithmiml4
 from nltk.translate.bleu_score import corpus_bleu
@@ -18,12 +18,12 @@ import json
 data_folder = '/home/lkk/datasets/flickr30k/'
 # base name shared by data files
 data_name = 'flickr30_5_cap_per_img_5_min_word_freq'
-prefix = 'base_with_miml4_1'
+prefix = 'base_with_miml5_2'
 # Model parameters
-emb_dim = 300  # dimension of word embeddings
-attention_dim = 512
+emb_dim = 1024  # dimension of word embeddings
+attention_dim = 1024
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
+decoder_dim = 1024  # dimension of decoder RNN
 # attrs_size = 1024
 dropout = 0.5
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -37,7 +37,7 @@ start_epoch = 0
 epochs = 20
 # keeps track of number of epochs since there's been an improvement in validation BLEU
 epochs_since_improvement = 0
-batch_size = 32
+batch_size = 16
 workers = 0  # for data-loading; right now, only 1 works with h5py
 
 encoder_lr1_1 = 2e-5  # MIML的resnet block if fine-tuning
@@ -46,19 +46,20 @@ encoder_lr1_2 = 2e-4  # MIML的 concept_layer if fine-tuning
 
 encoder_lr2 = 1e-4  # 提取特征的resnet block if fine-tuning
 
-decoder_lr = 4e-4  # learning rate for decoder
-grad_clip = 3.  # clip gradients at an absolute value of
+decoder_lr = 2e-4  # learning rate for decoder
+grad_clip = 2.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 scor right now
 print_freq = 1  # print training/validation stats every __ batches
 fine_tune_encoder = True  # fine-tune encoder?
-log_dir = './log_basewithmiml_flickr4_1_9_27'
-# './BEST_checkpoint_allcoco_5_cap_per_img_5_min_word_freq.pth.tar'
-# '/home/lkk/code/ImageCaption/model4_1_9_2/base_with_miml4_1_checkpoint_0.pth.tar'
-checkpoint = '/home/lkk/code/ImageCaption/filckr4_1_9_26/base_with_miml4_1_checkpoint_4.pth.tar'
+log_dir = './log_basewithmiml5_2_9_18'
+
+# '/home/lkk/code/ImageCaption/model5_1_9_8/base_with_miml5_1_BEST_checkpoint_2.pth.tar'
+checkpoint = None
 tag_flag = True
 miml_checkpoint = '/home/lkk/code/ImageCaption/checkpoint_ResNet_epoch_22.pth.tar'
-save_path = '/home/lkk/code/ImageCaption/filckr4_1_9_27'
+save_path = '/home/lkk/code/ImageCaption/flickr5_2_9_18'
+
 
 def main():
     global best_bleu4, epochs_since_improvement, checkpoint, start_epoch, fine_tune_encoder, data_name, word_map, miml_checkpoint, blocks, tag_flag
@@ -69,7 +70,7 @@ def main():
     encoder = Encoder(fine_tune1=False,
                       blocks=blocks, fine_tune2=fine_tune_encoder)
     # 加载miml
-    miml_checkpoint = torch.load(miml_checkpoint,map_location=device)
+    miml_checkpoint = torch.load(miml_checkpoint)
     encoder.miml_intermidate.load_state_dict(
         miml_checkpoint['intermidate'])
     encoder.miml_last.load_state_dict(miml_checkpoint['last'])
@@ -94,12 +95,14 @@ def main():
     #    {'params': filter(lambda p: p.requires_grad, encoder.miml_last.parameters(
     #    )), 'lr': encoder_lr1_1}
     optimizer = torch.optim.Adam(
-        [{'params': encoder.features_model.parameters(), 'lr': encoder_lr2, 'weight_deacy': 1e-1},
-         {'params': decoder.parameters(), 'lr': decoder_lr, 'weight_deacy': 1e-2}]
+        [{'params': encoder.features_model.parameters(), 'lr': encoder_lr2, 'weight_deacy': 1e-4},
+         {'params': decoder.parameters(), 'lr': decoder_lr, 'weight_deacy': 1e-3}]
     )
 
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optimizer, T_max=8)
     scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=3, gamma=0.6)
+        optimizer, step_size=2, gamma=0.5)
     if checkpoint:
         checkpoint = torch.load(
             checkpoint, map_location=lambda storage, loc: storage)
@@ -111,14 +114,20 @@ def main():
         encoder = encoder.to(device)
         decoder = decoder.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
-        adjust_learning_rate(optimizer, 0.5)
-        # scheduler.load_state_dict(checkpoint['scheduler'])
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=2, gamma=0.5, last_epoch=4)
-        del checkpoint  # dereference seems crucial
-        torch.cuda.empty_cache()
+        # for group in optimizer.param_groups:
+        #     s=0
+        #     for param in group['params'][0]:
+        #         s+=param.data.norm().item()
+        #         print('L2 :{}, max :{} , min :{}, mean: {}'.format(
+        #             param.data.norm().item(), param.data.max().item(), param.data.min().item(),
+        #             param.data.mean().item()))
+        # adjust_learning_rate(optimizer, 0.5)
+        # # scheduler.load_state_dict(checkpoint['scheduler'])
+        # scheduler = torch.optim.lr_scheduler.StepLR(
+        #     optimizer, step_size=3, gamma=0.6, last_epoch=9)
+        # del checkpoint  # dereference seems crucial
+        # torch.cuda.empty_cache()
     else:
-
         encoder = encoder.to(device)
         decoder = decoder.to(device)
 
@@ -198,10 +207,11 @@ def train(train_loader, encoder, decoder, criterion, optimizer, epoch, writer):
         #tags_target = tags_target.to(device)
         attributes, imgs_features = encoder(imgs)
         # loss2 = criterion2(attributes, tags_target)
-        scores, caps_sorted, decode_lengths, sort_ind = decoder(
+        scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
             attributes, imgs_features, caps, caplens)
 
-        # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
+        # Since we decoded starting with <start>, the targets are all words 
+        # after <start>, up to <end>
         targets = caps_sorted[:, 1:]
 
         # Remove timesteps that we didn't decode at, or are pads
@@ -214,6 +224,7 @@ def train(train_loader, encoder, decoder, criterion, optimizer, epoch, writer):
 
         # Calculate loss
         loss = criterion(scores, targets)  # + loss2
+        loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
         # Back prop.
         optimizer.zero_grad()
         # loss2.backward(retain_graph=True)
@@ -279,7 +290,7 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
 
             attributes, imgs_features = encoder(imgs)
 
-            scores, caps_sorted, decode_lengths, sort_ind = decoder(
+            scores, caps_sorted, decode_lengths, alphas, sort_ind = decoder(
                 attributes, imgs_features, caps, caplens)
 
             # Since we decoded starting with <start>, the targets are all words after <start>, up to <end>
@@ -295,7 +306,7 @@ def validate(val_loader, encoder, decoder, criterion, epoch, writer):
 
             # Calculate loss
             loss = criterion(scores, targets)  # + loss2
-
+            loss += alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
             # Keep track of metrics
             losses.update(loss.item(), sum(decode_lengths))
             top5 = accuracy(scores, targets, 5)

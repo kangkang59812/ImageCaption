@@ -6,7 +6,7 @@ from utils.data import CaptionDataset
 from nltk.translate.bleu_score import corpus_bleu
 import torch.nn.functional as F
 from tqdm import tqdm
-from src.base_with_miml.model2 import Encoder, MIML, Decoder
+from src.base_with_miml.model5_2 import Encoder, Decoder
 import os
 from pycocoevalcap.bleu.bleu import Bleu
 from pycocoevalcap.cider.cider import Cider
@@ -16,23 +16,23 @@ from pycocoevalcap.spice.spice import Spice
 import json
 # Parameters
 # folder with data files saved by create_input_files.py
-data_folder = '/home/lkk/datasets/coco2014/'
-data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+data_folder = '/home/lkk/datasets/flickr30k/'
+data_name = 'flickr30_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 # model checkpoint
-checkpoint = '/home/lkk/code/ImageCaption/BEST_base_with_miml2_checkpoint_.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/flickr5_2_9_18/base_with_miml5_2_checkpoint_6.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
-word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
+word_map_file = '/home/lkk/datasets/flickr30k/WORDMAP_flickr30_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
 
-emb_dim = 512  # dimension of word embeddings
+emb_dim = 1024  # dimension of word embeddings
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
+decoder_dim = 1024  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
-attention_dim = 512
+attention_dim = 1024
 # Load word map (word2ix)
 with open(word_map_file, 'r') as j:
     word_map = json.load(j)
@@ -41,26 +41,19 @@ vocab_size = len(word_map)
 
 # Load model
 checkpoint = torch.load(checkpoint, map_location=device)
-miml = MIML().to(device)
-miml.load_state_dict(checkpoint['miml'])
 
-miml.eval()
-
-encoder = Encoder().to(device)
+encoder = Encoder(freeze1=True, freeze2=True).to(device)
 encoder.load_state_dict(checkpoint['encoder'])
-
 encoder.eval()
+
 decoder = Decoder(attrs_dim=attrs_dim, attention_dim=attention_dim,
                   embed_dim=emb_dim,
                   decoder_dim=decoder_dim,
-                  attrs_size=attrs_size,
                   vocab_size=len(word_map),
                   device=device,
                   dropout=dropout).to(device)
 decoder.load_state_dict(checkpoint['decoder'])
 decoder.eval()
-
-
 # Normalization transform
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
@@ -97,8 +90,9 @@ def evaluate(beam_size):
         # Move to GPU device, if available
         image = image.to(device)  # (1, 3, 256, 256)
 
-        attrs = miml(image).expand(3, attrs_dim)
-        encoder_out = encoder(image)
+        attrs, encoder_out = encoder(image)
+        attrs = attrs.expand(3, attrs_dim)
+
         enc_image_size = encoder_out.size(1)
         encoder_dim = encoder_out.size(3)
         encoder_out = encoder_out.view(1, -1, encoder_dim)
@@ -129,14 +123,13 @@ def evaluate(beam_size):
 
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
-            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
-            awe, _ = decoder.attention(encoder_out, h1, h2)
-            # gate = decoder.sigmoid(decoder.f_beta(h2))
-            # awe = gate * awe
-
+            
+            awe, _ = decoder.attention(encoder_out, h2)
+            gate = decoder.sigmoid(decoder.f_beta(h2))
+            awe = gate * awe
             h2, c2 = decoder.decode_step2(
-                torch.cat([embeddings, awe], dim=1), (h2, c2))
-
+                torch.cat([embeddings, awe], dim=1), (h2, c2), h1)
+            h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
             scores = decoder.fc2(decoder.dropout2(h2))
             scores = F.log_softmax(scores, dim=1)
 

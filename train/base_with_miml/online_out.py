@@ -2,24 +2,19 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import torchvision.transforms as transforms
-from utils.data import CaptionDataset
-from nltk.translate.bleu_score import corpus_bleu
+from utils.data import OnlineCaptionDataset
 import torch.nn.functional as F
 from tqdm import tqdm
-from src.base_with_miml.model2 import Encoder, MIML, Decoder
+from src.base_with_miml.model4_1 import Encoder, Decoder
 import os
-from pycocoevalcap.bleu.bleu import Bleu
-from pycocoevalcap.cider.cider import Cider
-from pycocoevalcap.meteor.meteor import Meteor
-from pycocoevalcap.rouge.rouge import Rouge
-from pycocoevalcap.spice.spice import Spice
 import json
 # Parameters
 # folder with data files saved by create_input_files.py
 data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
+split = 'val2014'
 # model checkpoint
-checkpoint = '/home/lkk/code/ImageCaption/BEST_base_with_miml2_checkpoint_.pth.tar'
+checkpoint = '/home/lkk/code/ImageCaption/model4_1_9_9_2/base_with_miml4_1_checkpoint_13.pth.tar'
 # word map, ensure it's the same the data was encoded with and the model was trained with
 word_map_file = '/home/lkk/datasets/coco2014/WORDMAP_coco_5_cap_per_img_5_min_word_freq.json'
 # sets device for model and PyTorch tensors
@@ -27,12 +22,12 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # set to true only if inputs to model are fixed size; otherwise lot of computational overhead
 cudnn.benchmark = True
 
-emb_dim = 512  # dimension of word embeddings
+emb_dim = 1024  # dimension of word embeddings
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
+decoder_dim = 1024  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
-attention_dim = 512
+attention_dim = 1024
 # Load word map (word2ix)
 with open(word_map_file, 'r') as j:
     word_map = json.load(j)
@@ -41,30 +36,24 @@ vocab_size = len(word_map)
 
 # Load model
 checkpoint = torch.load(checkpoint, map_location=device)
-miml = MIML().to(device)
-miml.load_state_dict(checkpoint['miml'])
 
-miml.eval()
-
-encoder = Encoder().to(device)
+encoder = Encoder(freeze1=True, freeze2=True).to(device)
 encoder.load_state_dict(checkpoint['encoder'])
-
 encoder.eval()
+
 decoder = Decoder(attrs_dim=attrs_dim, attention_dim=attention_dim,
                   embed_dim=emb_dim,
                   decoder_dim=decoder_dim,
-                  attrs_size=attrs_size,
                   vocab_size=len(word_map),
                   device=device,
                   dropout=dropout).to(device)
 decoder.load_state_dict(checkpoint['decoder'])
 decoder.eval()
-
-
 # Normalization transform
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
 
+result = [] 
 
 def evaluate(beam_size):
     """
@@ -75,8 +64,8 @@ def evaluate(beam_size):
     """
     # DataLoader
     loader = torch.utils.data.DataLoader(
-        CaptionDataset(data_folder, data_name, 'TEST',
-                       transform=transforms.Compose([normalize])),
+        OnlineCaptionDataset(data_folder, split,
+                             transform=transforms.Compose([normalize])),
         batch_size=1, shuffle=True, num_workers=1, pin_memory=False)
 
     # TODO: Batched Beam Search
@@ -85,11 +74,11 @@ def evaluate(beam_size):
     # Lists to store references (true captions), and hypothesis (prediction) for each image
     # If for n images, we have n hypotheses, and references a, b, c... for each image, we need -
     # references = [[ref1a, ref1b, ref1c], [ref2a, ref2b], ...], hypotheses = [hyp1, hyp2, ...]
-    references = dict()
+   
     hypotheses = dict()
 
     # For each image
-    for j, (image, caps, caplens, allcaps) in enumerate(
+    for j, (image, ids) in enumerate(
             tqdm(loader, desc="EVALUATING AT BEAM SIZE " + str(beam_size))):
 
         k = beam_size
@@ -97,8 +86,9 @@ def evaluate(beam_size):
         # Move to GPU device, if available
         image = image.to(device)  # (1, 3, 256, 256)
 
-        attrs = miml(image).expand(3, attrs_dim)
-        encoder_out = encoder(image)
+        attrs, encoder_out = encoder(image)
+        attrs = attrs.expand(3, attrs_dim)
+
         enc_image_size = encoder_out.size(1)
         encoder_dim = encoder_out.size(3)
         encoder_out = encoder_out.view(1, -1, encoder_dim)
@@ -122,14 +112,17 @@ def evaluate(beam_size):
 
         # Start decoding
         step = 1
-        h1, c1, h2, c2 = decoder.init_hidden_state(attrs, encoder_out)
+        h1, c1, h2, c2 = decoder.init_hidden_state(
+            attrs, encoder_out, zero=True)
         h1, c1 = decoder.decode_step1(x0, (h1, c1))
         # s is a number less than or equal to k, because sequences are removed from this process once they hit <end>
         while True:
 
             embeddings = decoder.embedding(
                 k_prev_words).squeeze(1)  # (s, embed_dim)
+
             h1, c1 = decoder.decode_step1(embeddings, (h1, c1))
+
             awe, _ = decoder.attention(encoder_out, h1, h2)
             # gate = decoder.sigmoid(decoder.f_beta(h2))
             # awe = gate * awe
@@ -195,47 +188,52 @@ def evaluate(beam_size):
         i = complete_seqs_scores.index(max(complete_seqs_scores))
         seq = complete_seqs[i]
 
-        # References
-        img_caps = allcaps[0].tolist()
-        img_captions = list(
-            map(lambda c: [rev_word_map[w] for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
-                img_caps))  # remove <start> and pads
-        img_caps = [' '.join(c) for c in img_captions]
-        # print(img_caps)
-        references[str(j)] = img_caps
+        # # References
+        # img_caps = allcaps[0].tolist()
+        # img_captions = list(
+        #     map(lambda c: [rev_word_map[w] for w in c if w not in {word_map['<start>'], word_map['<end>'], word_map['<pad>']}],
+        #         img_caps))  # remove <start> and pads
+        # img_caps = [' '.join(c) for c in img_captions]
+        # # print(img_caps)
+        # references[str(j)] = img_caps
 
         # Hypotheses
         hypothesis = ([rev_word_map[w] for w in seq if w not in {
-            word_map['<start>'], word_map['<end>'], word_map['<pad>']}])
+            word_map["<start>"], word_map["<end>"], word_map["<pad>"]}])
         hypothesis = [' '.join(hypothesis)]
         # print(hypothesis)
         hypotheses[str(j)] = hypothesis
+        item = dict()
+        item["image_id"] = int(ids[0])
+        item["caption"] = hypothesis[0]
+        result.append(item)
+        
+    with open(os.path.join(data_folder, split + '.json'), 'w') as j:
+        json.dump(result, j)  
 
-        assert len(references) == len(hypotheses)
+    # # Calculate BLEU-1~BLEU4 scores
+    # m1 = Bleu()
+    # m2 = Meteor()
+    # m3 = Cider()
+    # m4 = Rouge()
+    # m5 = Spice()
+    # (score1, scores1) = m1.compute_score(references, hypotheses)
+    # (score2, scores2) = m2.compute_score(references, hypotheses)
+    # (score3, scores3) = m3.compute_score(references, hypotheses)
+    # (score4, scores4) = m4.compute_score(references, hypotheses)
+    # (score5, scores5) = m5.compute_score(references, hypotheses)
 
-    # Calculate BLEU-1~BLEU4 scores
-    m1 = Bleu()
-    m2 = Meteor()
-    m3 = Cider()
-    m4 = Rouge()
-    m5 = Spice()
-    (score1, scores1) = m1.compute_score(references, hypotheses)
-    (score2, scores2) = m2.compute_score(references, hypotheses)
-    (score3, scores3) = m3.compute_score(references, hypotheses)
-    (score4, scores4) = m4.compute_score(references, hypotheses)
-    (score5, scores5) = m5.compute_score(references, hypotheses)
-
-    return score1, score2, score3, score4, score5
+    # return score1, score2, score3, score4, score5
 
 
 if __name__ == '__main__':
     beam_size = 3
-
-    score1, score2, score3, score4, score5 = evaluate(beam_size)
-    print("\nMetric score's @ beam size of {} is:\n \
-          Bleu : {} \n \
-          Meteor : {} \n \
-          Cider : {} \n \
-          Rouge : {} \n \
-          Spice : {} ".format(
-        beam_size, score1, score2, score3, score4, score5))
+    evaluate(beam_size)
+    # print('10模型')
+    # print("\nMetric score's @ beam size of {} is:\n \
+    #       Bleu : {} \n \
+    #       Meteor : {} \n \
+    #       Cider : {} \n \
+    #       Rouge : {} \n \
+    #       Spice : {} ".format(
+    #     beam_size, score1, score2, score3, score4, score5))

@@ -246,7 +246,7 @@ def create_input_files(dataset, karpathy_json_path, image_folder, features_folde
 def create_flickr8k(dataset, karpathy_json_path, image_folder, captions_per_image, min_word_freq, output_folder,
                     max_len=50):
 
-    with open('/home/lkk/datasets/flickr8k/dataset.json', 'r') as j:
+    with open(karpathy_json_path, 'r') as j:
         data = json.load(j)
 
     train_image_paths = []
@@ -382,12 +382,12 @@ if __name__ == '__main__':
     #                    output_folder='/home/lkk/datasets/cocotest/',
     #                    features_folder='/home/lkk/dataset/',
     #                    max_len=50)
-    create_flickr8k(dataset='flickr',
-                    karpathy_json_path='/home/lkk/datasets/flickr8k/dataset.json',
-                    image_folder='/home/lkk/datasets/flickr8k/Flicker8k_Dataset',
+    create_flickr8k(dataset='flickr30',
+                    karpathy_json_path='/home/lkk/datasets/flickr30k/dataset.json',
+                    image_folder='/home/lkk/datasets/flickr30k/flickr30k-images',
                     captions_per_image=5,
                     min_word_freq=5,
-                    output_folder='/home/lkk/datasets/flickr8k/',
+                    output_folder='/home/lkk/datasets/flickr30k/',
                     max_len=50)
     # create_image_attributes(karpathy_json_path='/home/lkk/datasets/coco2014/dataset_coco.json',
     #                         attributes_vocab_path='/home/lkk/datasets/coco2014/attributes_map.json')

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchvision
 from collections import OrderedDict
 from src.head import Head
+from src.custom_LSTM.custom_lstms import aLSTMCell
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
@@ -12,7 +13,7 @@ class Encoder(nn.Module):
            { conv }
     '''
 
-    def __init__(self, basemodel='res101', encoded_image_size=14, K=20, L=1024, fine_tune1=True, blocks=1, fine_tune2=True, freeze1=True, freeze2=False):
+    def __init__(self, basemodel='res101', encoded_image_size=14, K=20, L=1024, fine_tune1=True, blocks=1, fine_tune2=True, freeze1=False, freeze2=False):
         super(Encoder, self).__init__()
         self.enc_image_size = encoded_image_size
         self.head = Head(model=basemodel)
@@ -162,8 +163,6 @@ class Attention(nn.Module):
         # linear layer to transform decoder's output
         self.decoder_att = nn.Linear(decoder_dim, attention_dim)
 
-        self.attr_att = nn.Linear(decoder_dim, attention_dim)
-
         # linear layer to calculate values to be softmax-ed
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
@@ -171,19 +170,17 @@ class Attention(nn.Module):
         #self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
-    def forward(self, encoder_out, decoder_uphidden, decoder_downhidden):
+    def forward(self, encoder_out, decoder_hidden):
         """
         Forward propagation.
         """
         # 转换 image features, 两路隐藏层状态
         att1 = self.encoder_att(encoder_out)
 
-        att2 = self.attr_att(decoder_uphidden)
-
-        att3 = self.decoder_att(decoder_downhidden)
+        att2 = self.decoder_att(decoder_hidden)
 
         att = self.full_att(self.dropout(
-            self.relu(att1 + att3.unsqueeze(1)+att2.unsqueeze(1)))).squeeze(2)
+            self.relu(att1 + att2.unsqueeze(1)))).squeeze(2)
         alpha = self.softmax(att)  # (batch_size, num_pixels, 1)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
@@ -232,15 +229,15 @@ class Decoder(nn.Module):
             encoder_dim, decoder_dim, attention_dim)  # attention network
 
         self.dropout2 = nn.Dropout(p=self.dropout)
-        self.decode_step2 = nn.LSTMCell(
-            embed_dim + encoder_dim, decoder_dim, bias=True)  # decoding LSTMCell
+        self.decode_step2 = aLSTMCell(
+            embed_dim + encoder_dim, decoder_dim, decoder_dim)  # decoding LSTMCell
         # linear layer to find initial hidden state of LSTMCell
         self.init2_h = nn.Linear(encoder_dim, decoder_dim)
         # linear layer to find initial cell state of LSTMCell
         self.init2_c = nn.Linear(encoder_dim, decoder_dim)
         # linear layer to create a sigmoid-activated gate
-        # self.f_beta = nn.Linear(decoder_dim, encoder_dim)
-        # self.sigmoid = nn.Sigmoid()
+        self.f_beta = nn.Linear(decoder_dim, encoder_dim)
+        self.sigmoid = nn.Sigmoid()
         # linear layer to find scores over vocabulary
         self.fc2 = nn.Linear(decoder_dim, vocab_size)
 
@@ -267,9 +264,12 @@ class Decoder(nn.Module):
                             gain=nn.init.calculate_gain('relu'))
         nn.init.orthogonal_(self.decode_step2.weight_ih,
                             gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step2.weight_ah,
+                            gain=nn.init.calculate_gain('relu'))
 
         nn.init.constant_(self.decode_step2.bias_hh, 0)
         nn.init.constant_(self.decode_step2.bias_ih, 0)
+        nn.init.constant_(self.decode_step2.bias_ah, 0)
 
     def load_pretrained_embeddings(self, embeddings):
         """
@@ -305,6 +305,7 @@ class Decoder(nn.Module):
         else:
             h1 = self.init1_h(attrs)
             c1 = self.init1_c(attrs)
+
             mean_encoder_out = encoder_out.mean(dim=1)
             # mean_encoder_out：[32,2048]转为512维
             h2 = self.init2_h(mean_encoder_out)  # (batch_size, decoder_dim)
@@ -335,7 +336,7 @@ class Decoder(nn.Module):
 
         embeddings = self.embedding(encoded_captions)
 
-        h1, c1, h2, c2 = self.init_hidden_state(attrs, encoder_out, zero=True)
+        h1, c1, h2, c2 = self.init_hidden_state(attrs, encoder_out)
 
         decode_lengths = (caption_lengths - 1).tolist()
 
@@ -351,20 +352,17 @@ class Decoder(nn.Module):
             # 上
 
             # 下
+            attention_weighted_encoding, alpha = self.attention(
+                encoder_out[:batch_size_t], h2[:batch_size_t])
 
+            gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
+            attention_weighted_encoding = gate * attention_weighted_encoding
+            h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,
+                                                  ], dim=1), (h2[:batch_size_t], c2[:batch_size_t]), h1[:batch_size_t])  # (batch_size_t, decoder_dim)
             h1, c1 = self.decode_step1(
                 embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
-
-            attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
-                                                                h2[:batch_size_t])
-
-            # gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
-            # attention_weighted_encoding = gate * attention_weighted_encoding
-            h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,
-                                                  ], dim=1), (h2[:batch_size_t], c2[:batch_size_t]))  # (batch_size_t, decoder_dim)
-
             preds = self.fc2(self.dropout2(h2))
 
             predictions[:batch_size_t, t, :] = preds
 
-        return predictions, encoded_captions, decode_lengths, sort_ind
+        return predictions, encoded_captions, decode_lengths, alphas, sort_ind

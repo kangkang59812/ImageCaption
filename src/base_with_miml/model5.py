@@ -4,7 +4,7 @@ import torchvision
 from collections import OrderedDict
 from src.head import Head
 from src.custom_LSTM.custom_lstms import aLSTMCell
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
@@ -134,6 +134,9 @@ class Encoder(nn.Module):
         for p in self.features_model.parameters():
             p.requires_grad = fine_tune
 
+        for p in self.adaptive_pool.parameters():
+            p.requires_grad = fine_tune
+
     def freeze1(self):
         for p in self.miml_intermidate.parameters():
             p.requires_grad = False
@@ -227,7 +230,7 @@ class Decoder(nn.Module):
 
         self.dropout2 = nn.Dropout(p=self.dropout)
         self.decode_step2 = aLSTMCell(
-            embed_dim + encoder_dim, decoder_dim, attrs_dim)  # decoding LSTMCell
+            embed_dim + encoder_dim, decoder_dim, decoder_dim)  # decoding LSTMCell
         # linear layer to find initial hidden state of LSTMCell
         self.init2_h = nn.Linear(encoder_dim, decoder_dim)
         # linear layer to find initial cell state of LSTMCell
@@ -250,6 +253,23 @@ class Decoder(nn.Module):
         # self.fc1.weight.data.uniform_(-0.1, 0.1)
         self.fc2.bias.data.fill_(0)
         self.fc2.weight.data.uniform_(-0.1, 0.1)
+        nn.init.orthogonal_(self.decode_step1.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step1.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.decode_step1.bias_hh, 0)
+        nn.init.constant_(self.decode_step1.bias_ih, 0)
+
+        nn.init.orthogonal_(self.decode_step2.weight_hh,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step2.weight_ih,
+                            gain=nn.init.calculate_gain('relu'))
+        nn.init.orthogonal_(self.decode_step2.weight_ah,
+                            gain=nn.init.calculate_gain('relu'))
+
+        nn.init.constant_(self.decode_step2.bias_hh, 0)
+        nn.init.constant_(self.decode_step2.bias_ih, 0)
+        nn.init.constant_(self.decode_step2.bias_ah, 0)
 
     def load_pretrained_embeddings(self, embeddings):
         """
@@ -335,7 +355,7 @@ class Decoder(nn.Module):
             # 下
             attention_weighted_encoding, alpha = self.attention(
                 encoder_out[:batch_size_t], h2[:batch_size_t])
-                
+
             gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
             attention_weighted_encoding = gate * attention_weighted_encoding
             h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,

@@ -192,7 +192,7 @@ class Attention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.full_att = nn.Linear(attention_dim, 1)
         self.relu = nn.ReLU()
-        #self.tanh = nn.Tanh()
+        self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=1)  # softmax layer to calculate weights
 
     def forward(self, encoder_out, decoder_hidden1, decoder_hidden2):
@@ -210,7 +210,7 @@ class Attention(nn.Module):
         att3 = self.attr_att(decoder_hidden1)
         # (batch_size, num_pixels)
         att = self.full_att(self.dropout(
-            self.relu(att1 + att2.unsqueeze(1)+att3.unsqueeze(1)))).squeeze(2)
+            self.tanh(att1 + att2.unsqueeze(1)+att3.unsqueeze(1)))).squeeze(2)
         alpha = self.softmax(att)  # (batch_size, num_pixels)
         attention_weighted_encoding = (
             encoder_out * alpha.unsqueeze(2)).sum(dim=1)  # (batch_size, encoder_dim)
@@ -362,11 +362,13 @@ class Decoder(nn.Module):
         for t in range(max(decode_lengths)):
             batch_size_t = sum([l > t for l in decode_lengths])
             # 上
-            h1, c1 = self.decode_step1(
-                embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
+
             # 下
             attention_weighted_encoding, alpha = self.attention(encoder_out[:batch_size_t], h1[:batch_size_t],
                                                                 h2[:batch_size_t])
+
+            h1, c1 = self.decode_step1(
+                embeddings[:batch_size_t, t, :], (h1[:batch_size_t], c1[:batch_size_t]))
             # gate = self.sigmoid(self.f_beta(h2[:batch_size_t]))
             # attention_weighted_encoding = gate * attention_weighted_encoding
             h2, c2 = self.decode_step2(torch.cat([embeddings[:batch_size_t, t, :], attention_weighted_encoding,

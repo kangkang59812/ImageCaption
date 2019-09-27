@@ -19,10 +19,10 @@ data_folder = '/home/lkk/datasets/coco2014/'
 data_name = 'coco_5_cap_per_img_5_min_word_freq'  # base name shared by data files
 prefix = 'base_with_miml2'
 # Model parameters
-emb_dim = 512  # dimension of word embeddings
-attention_dim = 512
+emb_dim = 1024  # dimension of word embeddings
+attention_dim = 1024
 attrs_dim = 1024  # dimension of attention linear layers
-decoder_dim = 512  # dimension of decoder RNN
+decoder_dim = 1024  # dimension of decoder RNN
 attrs_size = 1024
 dropout = 0.5
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -38,8 +38,8 @@ epochs = 20
 epochs_since_improvement = 0
 batch_size = 16
 workers = 1  # for data-loading; right now, only 1 works with h5py
-encoder_lr = 1e-4  # learning rate for encoder if fine-tuning
-decoder_lr = 4e-4  # learning rate for decoder
+encoder_lr = 2e-4  # learning rate for encoder if fine-tuning
+decoder_lr = 5e-4  # learning rate for decoder
 grad_clip = 5.  # clip gradients at an absolute value of
 alpha_c = 1.  # regularization parameter for 'doubly stochastic attention', as in the paper
 best_bleu4 = 0.  # BLEU-4 score right now
@@ -103,7 +103,10 @@ def main():
     decoder = decoder.to(device)
     encoder = encoder.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
-
+    scheduler1 = torch.optim.lr_scheduler.StepLR(
+        encoder_optimizer, step_size=3, gamma=0.8)
+    scheduler2 = torch.optim.lr_scheduler.StepLR(
+        decoder_optimizer, step_size=3, gamma=0.8)
     # Custom dataloaders
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
@@ -118,17 +121,19 @@ def main():
     writer = SummaryWriter(log_dir=log_dir)
     for epoch in range(start_epoch, epochs):
 
-        # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
-        if epochs_since_improvement == 10:
-            break
-        if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
-            adjust_learning_rate(decoder_optimizer, 0.8)
-            if fine_tune_encoder:
-                adjust_learning_rate(encoder_optimizer, 0.8)
-        elif epoch > 0 and epoch % 8 == 0:
-            adjust_learning_rate(decoder_optimizer, 0.8)
-            if fine_tune_encoder:
-                adjust_learning_rate(encoder_optimizer, 0.8)
+        # # Decay learning rate if there is no improvement for 8 consecutive epochs, and terminate training after 20
+        # if epochs_since_improvement == 10:
+        #     break
+        # if epochs_since_improvement > 0 and epochs_since_improvement % 4 == 0:
+        #     adjust_learning_rate(decoder_optimizer, 0.8)
+        #     if fine_tune_encoder:
+        #         adjust_learning_rate(encoder_optimizer, 0.8)
+        # elif epoch > 0 and epoch % 8 == 0:
+        #     adjust_learning_rate(decoder_optimizer, 0.8)
+        #     if fine_tune_encoder:
+        #         adjust_learning_rate(encoder_optimizer, 0.8)
+        scheduler1.step()
+        scheduler2.step()
 
         # One epoch's training
         train(train_loader=train_loader,
@@ -232,7 +237,7 @@ def train(train_loader, miml, encoder, decoder, criterion, encoder_optimizer, de
         if encoder_optimizer is not None:
             encoder_optimizer.step()
         decoder_optimizer.step()
-        
+
         # Keep track of metrics
         top5 = accuracy(scores, targets, 5)
         losses.update(loss.item(), sum(decode_lengths))

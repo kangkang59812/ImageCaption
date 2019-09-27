@@ -64,12 +64,12 @@ class Encoder(nn.Module):
         if self.basemodel == 'vgg16':
             layer = -6
         else:
-            layer = -7
+            layer = 5
 
         for p in self.model.parameters():
             p.requires_grad = False
             # If fine-tuning, only fine-tune convolutional blocks 2 through 4
-        for c in list(self.model.children())[layer:]:
+        for c in list(self.model.children())[5:]:
             for p in c.parameters():
                 p.requires_grad = fine_tune
 

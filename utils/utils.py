@@ -36,12 +36,12 @@ def save_checkpoint_basewithmiml4(path, prefix, epoch, encoder, decoder, optimiz
              'decoder': decoder.state_dict(),
              'optimizer': optimizer.state_dict(),
              'scheduler': scheduler.state_dict()}
-    filename = os.path.join('/home/lkk/code/MIML/', path,
+    filename = os.path.join(path,
                             prefix + '_checkpoint_' + str(epoch) + '.pth.tar')
     torch.save(state, filename)
     # If this checkpoint is the best so far, store a copy so it doesn't get overwritten by a worse checkpoint
     if is_best:
-        filename = os.path.join('/home/lkk/code/MIML/', path,
+        filename = os.path.join(path,
                                 prefix + '_BEST_checkpoint_' + str(epoch) + '.pth.tar')
         torch.save(state, filename)
 
@@ -140,7 +140,7 @@ def adjust_learning_rate(optimizer, shrink_factor):
     print("\nDECAYING learning rate.")
     for param_group in optimizer.param_groups:
         param_group['lr'] = param_group['lr'] * shrink_factor
-    print("The new learning rate is %f\n" % (optimizer.param_groups[0]['lr'],))
+        print("The new learning rate is %f\n" % (param_group['lr'],))
 
 
 def accuracy(scores, targets, k):
